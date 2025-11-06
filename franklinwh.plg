@@ -3,7 +3,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "franklinwh">
 <!ENTITY author    "Joshua Seidel">
-<!ENTITY version   "1.1.8">
+<!ENTITY version   "1.1.9">
 <!ENTITY launch    "Settings/FranklinWHSettings">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master">
 <!ENTITY pluginURL "&gitURL;/franklinwh.plg">
@@ -13,6 +13,13 @@
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" icon="&icon;" min="6.9.0" support="https://github.com/JoshuaSeidel/unraid-franklinwh-plugin/issues">
 
 <CHANGES>
+###1.1.9
+- FIXED: Removed last extra colon (after script tag)
+- FIXED: Containers now ALWAYS populate when page loads (removed PHP conditional)
+- FIXED: Changed defaults to SHUTDOWN_VMS="no" and SHUTDOWN_DOCKER="no"
+- IMPROVED: Simplified JavaScript toggle (no reload needed - containers pre-loaded)
+- IMPROVED: Toggle now instant (just show/hide, data already there)
+
 ###1.1.8
 - FIXED: Removed ALL extra colons (were from &amp;nbsp; lines)
 - FIXED: Container list now shows when toggling Yes→No→Yes
@@ -120,8 +127,8 @@ HISTORY_RETENTION_DAYS="90"
 HISTORY_INTERVAL="300"
 
 # Integration Settings (v1.1.0+)
-SHUTDOWN_VMS="yes"
-SHUTDOWN_DOCKER="yes"
+SHUTDOWN_VMS="no"
+SHUTDOWN_DOCKER="no"
 DOCKER_STOP_ORDER=""
 VM_SHUTDOWN_TIMEOUT="120"
 DOCKER_STOP_TIMEOUT="30"
@@ -1069,8 +1076,8 @@ Docker Stop Timeout (seconds):
 <div id="docker_container_section" style="position:fixed;top:180px;right:40px;width:380px;background:#1c1c1c;border-radius:8px;padding:20px;border:1px solid #333;box-shadow:0 4px 6px rgba(0,0,0,0.3);z-index:1000;max-height:calc(100vh - 220px);overflow-y:auto;display:<?=$cfg['SHUTDOWN_DOCKER']=='yes'?'block':'none'?>;">
 <h3 style="margin:0 0 15px 0;color:#4CAF50;font-size:1.1em;border-bottom:1px solid #333;padding-bottom:10px;">Containers to Stop</h3>
 <div id="docker_container_list" style="background:#2a2a2a;padding:12px;border-radius:6px;max-height:400px;overflow-y:auto;">
-    <?php if ($cfg['SHUTDOWN_DOCKER'] == 'yes'):
-    // Get list of running Docker containers with icons
+    <?php
+    // Get list of running Docker containers with icons (ALWAYS fetch for display)
     $containers = [];
     $docker_cmd = 'docker ps --format "{{.Names}}|{{.Image}}|{{.ID}}" 2>/dev/null';
     exec($docker_cmd, $output, $return_var);
@@ -1151,7 +1158,6 @@ Docker Stop Timeout (seconds):
         
         echo '</div>';
     }
-    endif;
     ?>
     <input type="hidden" name="DOCKER_STOP_ORDER" id="docker_stop_order_hidden" value="<?=htmlspecialchars($cfg['DOCKER_STOP_ORDER'])?>">
 </div>
@@ -1231,22 +1237,10 @@ Docker Stop Timeout (seconds):
 <script>
 function toggleDockerSettings(value) {
     var section = document.getElementById('docker_container_section');
-    var containerList = document.getElementById('docker_container_list');
     
     if (section) {
-        if (value === 'yes') {
-            // Check if containers are already loaded
-            if (containerList && containerList.innerHTML.trim() === '') {
-                // Need to reload to fetch containers
-                setTimeout(function() {
-                    location.reload();
-                }, 100);
-            } else {
-                section.style.display = 'block';
-            }
-        } else {
-            section.style.display = 'none';
-        }
+        // Simply show or hide - containers are always loaded
+        section.style.display = (value === 'yes') ? 'block' : 'none';
     }
 }
 
@@ -1320,9 +1314,6 @@ document.addEventListener('DOMContentLoaded', function() {
     updateStopOrder();
 });
 </script>
-
-&nbsp;
-:
 
 <input type="submit" value="Apply">
 <input type="button" value="Done" onclick="done()">
