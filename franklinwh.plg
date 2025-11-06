@@ -3,7 +3,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "franklinwh">
 <!ENTITY author    "Joshua Seidel">
-<!ENTITY version   "1.1.5">
+<!ENTITY version   "1.1.6">
 <!ENTITY launch    "Settings/FranklinWHSettings">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master">
 <!ENTITY pluginURL "&gitURL;/franklinwh.plg">
@@ -13,6 +13,12 @@
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" icon="&icon;" min="6.9.0" support="https://github.com/JoshuaSeidel/unraid-franklinwh-plugin/issues">
 
 <CHANGES>
+###1.1.6
+- FIXED: Layout reverted to single column (Unraid markdown parser doesn't support grid)
+- FIXED: Icon now installed as proper FILE entry with Source attribute
+- IMPROVED: Container selector inline with proper nesting (max-width: 600px)
+- IMPROVED: Cleaner HTML structure compatible with Unraid's parser
+
 ###1.1.5
 - IMPROVED: Container selector now in right column with proper width (400px)
 - IMPROVED: Two-column layout for Integration Settings (settings left, containers right)
@@ -909,6 +915,9 @@ switch ($action) {
 ?>]]></INLINE>
 </FILE>
 
+<FILE Name="/usr/local/emhttp/plugins/&name;/franklinwh-icon.png" Source="&gitURL;/franklinwh-icon.png">
+</FILE>
+
 <FILE Name="/usr/local/emhttp/plugins/&name;/FranklinWHSettings.page">
 <INLINE>
 <![CDATA[Menu="OtherSettings"
@@ -1020,9 +1029,6 @@ History Retention (days):
 
 ### Integration Settings (v1.1.0+)
 
-<div style="display:grid;grid-template-columns:1fr 400px;gap:30px;align-items:start;">
-<div>
-
 Shutdown VMs Before Server:
 : <select name="SHUTDOWN_VMS">
     <?=mk_option($cfg['SHUTDOWN_VMS'],'yes','Yes')?>
@@ -1049,10 +1055,9 @@ Docker Stop Timeout (seconds):
 
 > Maximum time per container to wait for graceful stop (10-300 seconds, default: 30)
 
-</div>
-<div id="docker_container_section" style="display:<?=$cfg['SHUTDOWN_DOCKER']=='yes'?'block':'none'?>;background:#1c1c1c;border-radius:8px;padding:20px;border:1px solid #333;">
-
-<h3 style="margin-top:0;color:#4CAF50;font-size:1.1em;">Containers to Stop</h3>
+Containers to Stop:
+: <div id="docker_container_section" style="display:<?=$cfg['SHUTDOWN_DOCKER']=='yes'?'block':'none'?>;">
+  <div style="background:#1c1c1c;border-radius:6px;padding:15px;border:1px solid #333;max-width:600px;">
 
 <div style="background:#2a2a2a;padding:12px;border-radius:6px;max-height:500px;overflow-y:auto;">
     <?php
@@ -1140,11 +1145,10 @@ Docker Stop Timeout (seconds):
     ?>
     <input type="hidden" name="DOCKER_STOP_ORDER" id="docker_stop_order_hidden" value="<?=htmlspecialchars($cfg['DOCKER_STOP_ORDER'])?>">
   </div>
+  </div>
+  </div>
 
 > Toggles ON = will stop. **Drag to reorder** = stop priority (top = first).
-
-</div>
-</div>
 
 &nbsp;
 :
