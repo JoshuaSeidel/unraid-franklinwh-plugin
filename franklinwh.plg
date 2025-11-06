@@ -3,16 +3,26 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "franklinwh">
 <!ENTITY author    "Joshua Seidel">
-<!ENTITY version   "1.1.4">
+<!ENTITY version   "1.1.5">
 <!ENTITY launch    "Settings/FranklinWHSettings">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master">
 <!ENTITY pluginURL "&gitURL;/franklinwh.plg">
-<!ENTITY icon      "/boot/config/plugins/franklinwh/franklinwh-icon.png">
+<!ENTITY icon      "franklinwh-icon.png">
 ]>
 
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" icon="&icon;" min="6.9.0" support="https://github.com/JoshuaSeidel/unraid-franklinwh-plugin/issues">
 
 <CHANGES>
+###1.1.5
+- IMPROVED: Container selector now in right column with proper width (400px)
+- IMPROVED: Two-column layout for Integration Settings (settings left, containers right)
+- IMPROVED: Container icons displayed from Docker templates
+- IMPROVED: Smaller, compact toggle switches for containers (42x22px)
+- IMPROVED: Smaller font sizes and tighter spacing for cleaner look
+- IMPROVED: Better visual hierarchy with styled container panel
+- FIXED: Plugin icon path changed to just filename for proper display
+- FIXED: Icon installation ensures proper permissions
+
 ###1.1.4
 - FIXED: Power values now correctly convert from kW to W (API returns kW)
 - FIXED: Installation script completely reworked for clean exit
@@ -1010,6 +1020,9 @@ History Retention (days):
 
 ### Integration Settings (v1.1.0+)
 
+<div style="display:grid;grid-template-columns:1fr 400px;gap:30px;align-items:start;">
+<div>
+
 Shutdown VMs Before Server:
 : <select name="SHUTDOWN_VMS">
     <?=mk_option($cfg['SHUTDOWN_VMS'],'yes','Yes')?>
@@ -1036,24 +1049,37 @@ Docker Stop Timeout (seconds):
 
 > Maximum time per container to wait for graceful stop (10-300 seconds, default: 30)
 
-<div id="docker_container_section" style="display:<?=$cfg['SHUTDOWN_DOCKER']=='yes'?'block':'none'?>;">
+</div>
+<div id="docker_container_section" style="display:<?=$cfg['SHUTDOWN_DOCKER']=='yes'?'block':'none'?>;background:#1c1c1c;border-radius:8px;padding:20px;border:1px solid #333;">
 
-Containers to Stop:
-: <div style="background:#2a2a2a;padding:15px;border-radius:6px;max-height:400px;overflow-y:auto;">
+<h3 style="margin-top:0;color:#4CAF50;font-size:1.1em;">Containers to Stop</h3>
+
+<div style="background:#2a2a2a;padding:12px;border-radius:6px;max-height:500px;overflow-y:auto;">
     <?php
-    // Get list of running Docker containers
+    // Get list of running Docker containers with icons
     $containers = [];
-    $docker_cmd = 'docker ps --format "{{.Names}}|{{.Image}}|{{.Status}}" 2>/dev/null';
+    $docker_cmd = 'docker ps --format "{{.Names}}|{{.Image}}|{{.ID}}" 2>/dev/null';
     exec($docker_cmd, $output, $return_var);
     
     if ($return_var === 0 && !empty($output)) {
         foreach ($output as $line) {
             $parts = explode('|', $line);
             if (count($parts) >= 3) {
+                // Get container icon from Unraid (same as Docker page)
+                $icon_path = "/var/local/emhttp/docker.png"; // default
+                $config_path = "/boot/config/plugins/dockerMan/templates-user/my-{$parts[0]}.xml";
+                if (file_exists($config_path)) {
+                    $xml = @simplexml_load_file($config_path);
+                    if ($xml && isset($xml->Icon)) {
+                        $icon_path = (string)$xml->Icon;
+                    }
+                }
+                
                 $containers[] = [
                     'name' => $parts[0],
                     'image' => $parts[1],
-                    'status' => $parts[2]
+                    'id' => $parts[2],
+                    'icon' => $icon_path
                 ];
             }
         }
@@ -1063,27 +1089,28 @@ Containers to Stop:
     $stop_order = array_filter(array_map('trim', explode(',', $cfg['DOCKER_STOP_ORDER'] ?? '')));
     
     if (empty($containers)) {
-        echo '<p style="color:#FF9800;margin:0;">No running Docker containers found.</p>';
-        echo '<p style="color:#999;font-size:0.9em;margin:10px 0 0 0;">Containers will be detected when service runs during grid outage.</p>';
+        echo '<p style="color:#FF9800;margin:0;font-size:0.9em;">No running containers found.</p>';
+        echo '<p style="color:#666;font-size:0.85em;margin:8px 0 0 0;">Start some containers first.</p>';
     } else {
-        echo '<p style="color:#999;font-size:0.9em;margin:0 0 10px 0;">Select containers to stop in priority order (drag to reorder):</p>';
-        echo '<div id="container_list" style="display:grid;gap:8px;">';
+        echo '<p style="color:#999;font-size:0.85em;margin:0 0 12px 0;"><i class="fa fa-info-circle"></i> Drag to set stop order</p>';
+        echo '<div id="container_list" style="display:grid;gap:6px;">';
         
         // First show containers in stop_order
         foreach ($stop_order as $priority_name) {
             foreach ($containers as $idx => $container) {
                 if ($container['name'] === $priority_name) {
                     $checked = 'checked';
-                    echo '<div class="container-item" draggable="true" data-name="' . htmlspecialchars($container['name']) . '" style="background:#1c1c1c;padding:10px;border-radius:4px;border-left:4px solid #4CAF50;cursor:move;display:flex;align-items:center;gap:15px;">';
-                    echo '<label class="toggle-switch" style="flex-shrink:0;">';
+                    echo '<div class="container-item" draggable="true" data-name="' . htmlspecialchars($container['name']) . '" style="background:#1c1c1c;padding:8px;border-radius:4px;border-left:3px solid #4CAF50;cursor:move;display:flex;align-items:center;gap:10px;">';
+                    echo '<img src="' . htmlspecialchars($container['icon']) . '" style="width:32px;height:32px;border-radius:4px;flex-shrink:0;" onerror="this.src=\'/var/local/emhttp/docker.png\'">';
+                    echo '<label class="toggle-switch toggle-sm" style="flex-shrink:0;">';
                     echo '<input type="checkbox" class="container-checkbox" name="docker_containers[]" value="' . htmlspecialchars($container['name']) . '" ' . $checked . '>';
                     echo '<span class="toggle-slider"></span>';
                     echo '</label>';
                     echo '<div style="flex:1;min-width:0;">';
-                    echo '<div style="color:#4CAF50;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars($container['name']) . '</div>';
-                    echo '<div style="color:#999;font-size:0.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars($container['image']) . '</div>';
+                    echo '<div style="color:#4CAF50;font-weight:600;font-size:0.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars($container['name']) . '</div>';
+                    echo '<div style="color:#777;font-size:0.75em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars($container['image']) . '</div>';
                     echo '</div>';
-                    echo '<span style="color:#666;font-size:1.2em;flex-shrink:0;">☰</span>';
+                    echo '<span style="color:#555;font-size:1em;flex-shrink:0;cursor:grab;">☰</span>';
                     echo '</div>';
                     unset($containers[$idx]);
                     break;
@@ -1094,16 +1121,17 @@ Containers to Stop:
         // Then show remaining containers
         foreach ($containers as $container) {
             $checked = '';
-            echo '<div class="container-item" draggable="true" data-name="' . htmlspecialchars($container['name']) . '" style="background:#1c1c1c;padding:10px;border-radius:4px;border-left:4px solid #666;cursor:move;display:flex;align-items:center;gap:15px;">';
-            echo '<label class="toggle-switch" style="flex-shrink:0;">';
+            echo '<div class="container-item" draggable="true" data-name="' . htmlspecialchars($container['name']) . '" style="background:#1c1c1c;padding:8px;border-radius:4px;border-left:3px solid #444;cursor:move;display:flex;align-items:center;gap:10px;">';
+            echo '<img src="' . htmlspecialchars($container['icon']) . '" style="width:32px;height:32px;border-radius:4px;flex-shrink:0;" onerror="this.src=\'/var/local/emhttp/docker.png\'">';
+            echo '<label class="toggle-switch toggle-sm" style="flex-shrink:0;">';
             echo '<input type="checkbox" class="container-checkbox" name="docker_containers[]" value="' . htmlspecialchars($container['name']) . '" ' . $checked . '>';
             echo '<span class="toggle-slider"></span>';
             echo '</label>';
             echo '<div style="flex:1;min-width:0;">';
-            echo '<div style="color:#ccc;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars($container['name']) . '</div>';
-            echo '<div style="color:#999;font-size:0.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars($container['image']) . '</div>';
+            echo '<div style="color:#ccc;font-weight:600;font-size:0.9em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars($container['name']) . '</div>';
+            echo '<div style="color:#777;font-size:0.75em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' . htmlspecialchars($container['image']) . '</div>';
             echo '</div>';
-            echo '<span style="color:#666;font-size:1.2em;flex-shrink:0;">☰</span>';
+            echo '<span style="color:#555;font-size:1em;flex-shrink:0;cursor:grab;">☰</span>';
             echo '</div>';
         }
         
@@ -1113,9 +1141,13 @@ Containers to Stop:
     <input type="hidden" name="DOCKER_STOP_ORDER" id="docker_stop_order_hidden" value="<?=htmlspecialchars($cfg['DOCKER_STOP_ORDER'])?>">
   </div>
 
-> Checked containers will be stopped before shutdown. **Drag to reorder** - containers at the top are stopped first.
+> Toggles ON = will stop. **Drag to reorder** = stop priority (top = first).
 
 </div>
+</div>
+
+&nbsp;
+:
 
 <style>
 /* Modern Toggle Switch */
@@ -1167,6 +1199,21 @@ Containers to Stop:
 
 .toggle-slider:hover {
     opacity: 0.9;
+}
+
+/* Smaller toggle for containers */
+.toggle-sm {
+    width: 42px;
+    height: 22px;
+}
+
+.toggle-sm .toggle-slider:before {
+    height: 16px;
+    width: 16px;
+}
+
+.toggle-sm input:checked + .toggle-slider:before {
+    transform: translateX(20px);
 }
 </style>
 
@@ -1365,14 +1412,14 @@ setInterval(function(){location.reload();},60000);
 <FILE Run="/bin/bash">
 <INLINE>
 <![CDATA[
-# Download icon to plugin directory
+# Download and install icon
+mkdir -p /usr/local/emhttp/plugins/franklinwh
+mkdir -p /boot/config/plugins/franklinwh
 curl -s -o /usr/local/emhttp/plugins/franklinwh/franklinwh-icon.png \
   "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master/franklinwh-icon.png"
-
-# Copy icon to boot config for plugin manager
-mkdir -p /boot/config/plugins/franklinwh
 cp /usr/local/emhttp/plugins/franklinwh/franklinwh-icon.png \
   /boot/config/plugins/franklinwh/franklinwh-icon.png 2>/dev/null || true
+chmod 644 /usr/local/emhttp/plugins/franklinwh/franklinwh-icon.png
 
 # Set permissions
 chmod +x /usr/local/emhttp/plugins/franklinwh/franklinwh_monitor.py
