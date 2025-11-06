@@ -3,16 +3,24 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "franklinwh">
 <!ENTITY author    "Joshua Seidel">
-<!ENTITY version   "1.1.1">
+<!ENTITY version   "1.1.2">
 <!ENTITY launch    "Settings/FranklinWHSettings">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master">
 <!ENTITY pluginURL "&gitURL;/franklinwh.plg">
-<!ENTITY icon      "&gitURL;/franklinwh-icon.png">
+<!ENTITY icon      "/boot/config/plugins/franklinwh/franklinwh-icon.png">
 ]>
 
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" icon="&icon;" min="6.9.0" support="https://github.com/JoshuaSeidel/unraid-franklinwh-plugin/issues">
 
 <CHANGES>
+###1.1.2
+- FIXED: Power values now correctly display as kW when >= 1000W
+- FIXED: Status display shows proper units (W for under 1kW, kW for 1kW and above)
+- FIXED: Statistics display uses same formatting (2 decimal places for kW)
+- FIXED: Plugin icon now displays correctly on Plugins page
+- IMPROVED: format_power() helper function for consistent formatting
+- IMPROVED: Icon copied to boot config directory for plugin manager
+
 ###1.1.1
 - IMPROVED: Interactive Docker container selector with drag-and-drop reordering
 - IMPROVED: Visual indication of selected containers with colored borders
@@ -890,6 +898,14 @@ require_once '/usr/local/emhttp/plugins/dynamix/include/Wrappers.php';
 $cfg = parse_ini_file('/boot/config/plugins/franklinwh/franklinwh.cfg');
 $status_file = '/var/local/emhttp/franklinwh_status.json';
 $status = file_exists($status_file) ? json_decode(file_get_contents($status_file), true) : [];
+
+// Helper function to format power values (convert W to kW if >= 1000)
+function format_power($watts) {
+    if (abs($watts) >= 1000) {
+        return number_format($watts / 1000, 2) . ' kW';
+    }
+    return number_format($watts, 0) . ' W';
+}
 ?>
 
 <form markdown="1" method="POST" action="/update.php" target="progressFrame">
@@ -1187,22 +1203,22 @@ document.addEventListener('DOMContentLoaded', function() {
             
             <div style="background:#2a2a2a;padding:15px;border-radius:6px;border-left:4px solid #4CAF50;">
                 <div style="color:#999;font-size:0.9em;">Battery Power</div>
-                <div style="font-size:1.5em;font-weight:bold;color:#4CAF50;"><?=number_format($status['battery_power'])?> W</div>
+                <div style="font-size:1.5em;font-weight:bold;color:#4CAF50;"><?=format_power($status['battery_power'])?></div>
             </div>
             
             <div style="background:#2a2a2a;padding:15px;border-radius:6px;border-left:4px solid #2196F3;">
                 <div style="color:#999;font-size:0.9em;">Solar Power</div>
-                <div style="font-size:1.5em;font-weight:bold;color:#2196F3;"><?=number_format($status['solar_power'])?> W</div>
+                <div style="font-size:1.5em;font-weight:bold;color:#2196F3;"><?=format_power($status['solar_power'])?></div>
             </div>
             
             <div style="background:#2a2a2a;padding:15px;border-radius:6px;border-left:4px solid #FF9800;">
                 <div style="color:#999;font-size:0.9em;">Home Load</div>
-                <div style="font-size:1.5em;font-weight:bold;color:#FF9800;"><?=number_format($status['home_consumption'])?> W</div>
+                <div style="font-size:1.5em;font-weight:bold;color:#FF9800;"><?=format_power($status['home_consumption'])?></div>
             </div>
             
             <div style="background:#2a2a2a;padding:15px;border-radius:6px;border-left:4px solid #9C27B0;">
                 <div style="color:#999;font-size:0.9em;">Grid Power</div>
-                <div style="font-size:1.5em;font-weight:bold;color:#9C27B0;"><?=number_format($status['grid_power'])?> W</div>
+                <div style="font-size:1.5em;font-weight:bold;color:#9C27B0;"><?=format_power($status['grid_power'])?></div>
             </div>
         </div>
         
@@ -1225,8 +1241,8 @@ if (file_exists($stats_file) && $cfg['ENABLE_HISTORY'] == 'yes'):
         <div style="flex:1;min-width:250px;background:#2a2a2a;padding:15px;border-radius:6px;">
             <h3 style="color:#4CAF50;margin-top:0;">Last 24 Hours</h3>
             <p style="color:#ccc;margin:5px 0;"><strong>Avg Battery:</strong> <?=$stats['daily']['avg_battery_soc']?>%</p>
-            <p style="color:#ccc;margin:5px 0;"><strong>Peak Solar:</strong> <?=number_format($stats['daily']['peak_solar_power'])?> W</p>
-            <p style="color:#ccc;margin:5px 0;"><strong>Avg Consumption:</strong> <?=number_format($stats['daily']['avg_consumption'])?> W</p>
+            <p style="color:#ccc;margin:5px 0;"><strong>Peak Solar:</strong> <?=format_power($stats['daily']['peak_solar_power'])?></p>
+            <p style="color:#ccc;margin:5px 0;"><strong>Avg Consumption:</strong> <?=format_power($stats['daily']['avg_consumption'])?></p>
         </div>
         <?php endif; ?>
         
@@ -1234,8 +1250,8 @@ if (file_exists($stats_file) && $cfg['ENABLE_HISTORY'] == 'yes'):
         <div style="flex:1;min-width:250px;background:#2a2a2a;padding:15px;border-radius:6px;">
             <h3 style="color:#2196F3;margin-top:0;">Last 7 Days</h3>
             <p style="color:#ccc;margin:5px 0;"><strong>Avg Battery:</strong> <?=$stats['weekly']['avg_battery_soc']?>%</p>
-            <p style="color:#ccc;margin:5px 0;"><strong>Peak Solar:</strong> <?=number_format($stats['weekly']['peak_solar_power'])?> W</p>
-            <p style="color:#ccc;margin:5px 0;"><strong>Avg Consumption:</strong> <?=number_format($stats['weekly']['avg_consumption'])?> W</p>
+            <p style="color:#ccc;margin:5px 0;"><strong>Peak Solar:</strong> <?=format_power($stats['weekly']['peak_solar_power'])?></p>
+            <p style="color:#ccc;margin:5px 0;"><strong>Avg Consumption:</strong> <?=format_power($stats['weekly']['avg_consumption'])?></p>
         </div>
         <?php endif; ?>
         
@@ -1243,8 +1259,8 @@ if (file_exists($stats_file) && $cfg['ENABLE_HISTORY'] == 'yes'):
         <div style="flex:1;min-width:250px;background:#2a2a2a;padding:15px;border-radius:6px;">
             <h3 style="color:#FF9800;margin-top:0;">Last 30 Days</h3>
             <p style="color:#ccc;margin:5px 0;"><strong>Avg Battery:</strong> <?=$stats['monthly']['avg_battery_soc']?>%</p>
-            <p style="color:#ccc;margin:5px 0;"><strong>Peak Solar:</strong> <?=number_format($stats['monthly']['peak_solar_power'])?> W</p>
-            <p style="color:#ccc;margin:5px 0;"><strong>Avg Consumption:</strong> <?=number_format($stats['monthly']['avg_consumption'])?> W</p>
+            <p style="color:#ccc;margin:5px 0;"><strong>Peak Solar:</strong> <?=format_power($stats['monthly']['peak_solar_power'])?></p>
+            <p style="color:#ccc;margin:5px 0;"><strong>Avg Consumption:</strong> <?=format_power($stats['monthly']['avg_consumption'])?></p>
         </div>
         <?php endif; ?>
     </div>
@@ -1276,9 +1292,14 @@ setInterval(function(){location.reload();},60000);
 <FILE Run="/bin/bash">
 <INLINE>
 <![CDATA[
-# Download icon
+# Download icon to plugin directory
 curl -s -o /usr/local/emhttp/plugins/franklinwh/franklinwh-icon.png \
   "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master/franklinwh-icon.png"
+
+# Copy icon to boot config for plugin manager
+mkdir -p /boot/config/plugins/franklinwh
+cp /usr/local/emhttp/plugins/franklinwh/franklinwh-icon.png \
+  /boot/config/plugins/franklinwh/franklinwh-icon.png 2>/dev/null || true
 
 # Set permissions
 chmod +x /usr/local/emhttp/plugins/franklinwh/franklinwh_monitor.py
