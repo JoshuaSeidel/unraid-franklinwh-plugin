@@ -132,36 +132,34 @@ EOF
 
 #### Solution 1: Invalid Credentials
 ```bash
-# Re-verify your Gateway ID and Access Token
-# Gateway ID format: FWH-XXXXXX
-# Access Token: Long alphanumeric string
+# Re-verify your credentials in Settings → FranklinWH
+# Username: Your FranklinWH account email
+# Password: Your FranklinWH account password  
+# Gateway ID format: 10060005A02X########
 
-# Update via web UI: Settings → FranklinWH
+# Check for extra spaces or quotes
+# Ensure credentials match your FranklinWH mobile app login
 ```
 
-#### Solution 2: Network Issues
+#### Solution 2: Gateway ID Incorrect
 ```bash
-# Check if FranklinWH is on network
-# Find FranklinWH IP:
-nmap -sn 192.168.1.0/24 | grep -i franklin
-
-# Or check your router's DHCP client list
-
-# Test connectivity
-ping YOUR_FRANKLINWH_IP
-
-# If ping fails, check:
-# - FranklinWH gateway is powered on
-# - Network cable connected
-# - Same network as Unraid
-# - Firewall not blocking
+# Find your correct Gateway ID:
+# 1. Open FranklinWH mobile app
+# 2. Go to More → Site Address
+# 3. Copy the SN (Serial Number)
+# 4. Enter exactly as shown (no spaces)
 ```
 
-#### Solution 3: API Token Expired
+#### Solution 3: Network Issues
 ```bash
-# Access tokens may expire
-# Solution: Request new token from FranklinWH support
-# Or re-authenticate via FranklinWH app
+# Plugin uses FranklinWH Cloud API (not local network)
+# Check internet connectivity from Unraid:
+ping -c 3 energy.franklinwh.com
+
+# If ping fails:
+# - Check Unraid network settings
+# - Verify DNS is working
+# - Check firewall/proxy settings
 ```
 
 ### Issue 3: Status Not Updating

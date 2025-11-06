@@ -1,129 +1,94 @@
 <?xml version='1.0' standalone='yes'?>
+
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "franklinwh">
 <!ENTITY author    "Joshua Seidel">
-<!ENTITY version   "2024.11.06">
-<!ENTITY pluginURL "https://raw.githubusercontent.com/JoshuaSeidel/franklinwh-unraid-plugin/master/franklinwh.plg">
-<!ENTITY packageURL "https://raw.githubusercontent.com/JoshuaSeidel/franklinwh-unraid-plugin/master/packages">
+<!ENTITY version   "1.0.0">
+<!ENTITY launch    "Settings/FranklinWHSettings">
+<!ENTITY gitURL    "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master">
+<!ENTITY pluginURL "&gitURL;/franklinwh.plg">
+<!ENTITY icon      "&gitURL;/franklinwh-icon.png">
 ]>
 
-<PLUGIN name="&name;" author="&author;" version="&version;" pluginURL="&pluginURL;" min="6.9.0">
+<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" icon="&icon;" min="6.9.0" support="https://github.com/JoshuaSeidel/unraid-franklinwh-plugin/issues">
 
 <CHANGES>
-###2024.11.06
+###1.0.0
 - Initial release
-- FranklinWH battery monitoring integration
-- Grid outage detection and response
-- Configurable power thresholds for shutdown
-- Web UI for configuration and monitoring
-- Similar functionality to NUT plugin for UPS monitoring
+- Real-time battery monitoring via FranklinWH API (franklinwh 0.6.0)
+- Monitor battery SOC, solar production, grid status, and home consumption
+- Configurable thresholds for low power mode and automatic shutdown
+- Grid outage detection with automated response actions
+- Web-based configuration UI in Unraid Settings
+- Real-time status display with battery level, grid status, and power metrics
+- Unraid notification integration for alerts
+- Python 3 monitoring daemon with graceful shutdown handling
+- Support for username/password authentication with gateway ID
 </CHANGES>
 
 <!--
-FranklinWH Power Management Plugin for Unraid
-This plugin monitors your FranklinWH home battery system and responds to
-grid outages by managing server power consumption and initiating controlled
-shutdowns when battery levels are critical.
+FranklinWH Power Management - Monitor battery and manage server power during grid outages.
 -->
 
 <FILE Name="/boot/config/plugins/&name;/&name;.cfg">
 <INLINE>
 # FranklinWH Configuration
 SERVICE="disable"
+USERNAME=""
+PASSWORD=""
 GATEWAY_ID=""
-ACCESS_TOKEN=""
 CHECK_INTERVAL="60"
 SHUTDOWN_THRESHOLD="20"
 LOW_POWER_THRESHOLD="50"
 GRID_OUTAGE_ACTION="low_power"
 SHUTDOWN_DELAY="300"
-NOTIFY_EMAIL=""
-NOTIFY_TELEGRAM=""
 </INLINE>
 </FILE>
 
 <FILE Name="/boot/config/plugins/&name;/requirements.txt">
 <INLINE>
-franklinwh==0.3.0
+franklinwh>=0.6.0
 requests>=2.31.0
 </INLINE>
 </FILE>
 
 <FILE Run="/bin/bash">
 <INLINE>
-# Remove old 'source' files
-rm -f $(ls /boot/config/plugins/&name;/&name;*.txz 2&gt;/dev/null &#124; grep -v '&version;')
+<![CDATA[
+# Clean up - remove old .php file if it exists
+rm -rf /usr/local/emhttp/plugins/franklinwh
+mkdir -p /usr/local/emhttp/plugins/franklinwh
+
+echo "Recreated plugin directory from scratch"
+]]>
 </INLINE>
 </FILE>
 
 <FILE Run="/bin/bash">
 <INLINE>
+<![CDATA[
 # Install Python packages
 echo "Installing FranklinWH dependencies..."
 
-# Check if pip is available
-if ! command -v pip3 &amp;&gt; /dev/null; then
+if ! command -v pip3 &> /dev/null; then
     echo "Installing pip..."
     curl https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
     python3 /tmp/get-pip.py
     rm /tmp/get-pip.py
 fi
 
-# Install required packages
-pip3 install -q -r /boot/config/plugins/&name;/requirements.txt
+pip3 install -q -r /boot/config/plugins/franklinwh/requirements.txt
 
 echo "FranklinWH dependencies installed successfully"
-</INLINE>
-</FILE>
-
-<FILE Name="/usr/local/emhttp/plugins/&name;/README.md">
-<INLINE>
-# FranklinWH Power Management Plugin for Unraid
-
-This plugin integrates your FranklinWH home battery system with Unraid, allowing your server to respond intelligently to grid outages.
-
-## Features
-
-- **Real-time Battery Monitoring**: Track remaining battery capacity and state of charge
-- **Grid Outage Detection**: Automatically detect when the grid is offline
-- **Configurable Power Thresholds**: Set custom battery levels for different actions
-- **Low Power Mode**: Reduce server power consumption during outages
-- **Automatic Shutdown**: Gracefully shut down the server when battery is critical
-- **Status Notifications**: Email and Telegram notifications for power events
-- **Web Interface**: Easy configuration and real-time status monitoring
-
-## Configuration
-
-1. Obtain your FranklinWH Access Token and Gateway ID from the FranklinWH app
-2. Navigate to Settings > FranklinWH in the Unraid web interface
-3. Enter your credentials and configure power thresholds
-4. Enable the service and save
-
-## Power Management Options
-
-- **Monitor Only**: Just display status, no automatic actions
-- **Low Power Mode**: Spin down arrays and reduce consumption at configurable threshold
-- **Auto Shutdown**: Initiate graceful shutdown at critical battery level
-- **Custom Script**: Run your own script when events occur
-
-## Requirements
-
-- Unraid 6.9.0 or newer
-- FranklinWH home battery system with network connectivity
-- Valid FranklinWH account credentials
-
-## Support
-
-For issues and feature requests, please visit the GitHub repository.
+]]>
 </INLINE>
 </FILE>
 
 <FILE Name="/usr/local/emhttp/plugins/&name;/franklinwh_monitor.py">
 <INLINE>
-#!/usr/bin/env python3
+<![CDATA[#!/usr/bin/env python3
 """
 FranklinWH Battery Monitor for Unraid
-Monitors battery status and manages server power during grid outages
 """
 
 import sys
@@ -134,14 +99,12 @@ import signal
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from franklinwh import FranklinWH
+from franklinwh import Client, TokenFetcher
 
-# Configuration
 CONFIG_FILE = "/boot/config/plugins/franklinwh/franklinwh.cfg"
 STATUS_FILE = "/var/local/emhttp/franklinwh_status.json"
 LOG_FILE = "/var/log/franklinwh.log"
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -161,7 +124,6 @@ class FranklinWHMonitor:
         self.shutdown_initiated = False
         self.low_power_mode = False
         
-        # Setup signal handlers
         signal.signal(signal.SIGTERM, self.signal_handler)
         signal.signal(signal.SIGINT, self.signal_handler)
         
@@ -170,7 +132,6 @@ class FranklinWHMonitor:
         self.running = False
         
     def load_config(self):
-        """Load configuration from file"""
         config = {}
         try:
             with open(CONFIG_FILE, 'r') as f:
@@ -185,45 +146,70 @@ class FranklinWHMonitor:
         return config
         
     def connect(self):
-        """Initialize FranklinWH client"""
         try:
+            username = self.config.get('USERNAME', '')
+            password = self.config.get('PASSWORD', '')
             gateway_id = self.config.get('GATEWAY_ID', '')
-            access_token = self.config.get('ACCESS_TOKEN', '')
             
-            if not gateway_id or not access_token:
-                logger.error("Gateway ID or Access Token not configured")
+            if not username or not password:
+                logger.error("Username or Password not configured")
                 return False
                 
-            self.client = FranklinWH(gateway_id, access_token)
-            logger.info("Connected to FranklinWH system")
+            if not gateway_id:
+                logger.error("Gateway ID not configured. Find it in your FranklinWH app under More -> Site Address (shown as SN)")
+                return False
+                
+            logger.info("Connecting to FranklinWH API...")
+            
+            # Create TokenFetcher with credentials
+            fetcher = TokenFetcher(username, password)
+            logger.info("Token fetcher created successfully")
+            
+            # Create the Client with fetcher and gateway ID
+            self.client = Client(fetcher=fetcher, gateway=gateway_id)
+            logger.info(f"Connected to FranklinWH system (Gateway: {gateway_id})")
             return True
         except Exception as e:
             logger.error(f"Error connecting to FranklinWH: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
             
     def get_battery_status(self):
-        """Get current battery status from FranklinWH"""
         try:
-            # Get system data
-            data = self.client.get_data()
+            # Get stats from the API (returns Stats dataclass with current and totals)
+            stats = self.client.get_stats()
+            
+            # Extract current stats
+            current = stats.current
+            
+            # Determine grid status based on grid usage
+            # Positive grid_use = importing from grid, negative = exporting to grid
+            if current.grid_use > 0:
+                grid_status = 'online'
+            elif current.grid_use < 0:
+                grid_status = 'exporting'
+            else:
+                grid_status = 'offline'
             
             status = {
                 'timestamp': datetime.now().isoformat(),
-                'battery_soc': data.get('soc', 0),  # State of charge %
-                'grid_status': data.get('grid_status', 'unknown'),
-                'battery_power': data.get('battery_power', 0),  # Watts
-                'solar_power': data.get('solar_power', 0),
-                'home_consumption': data.get('home_consumption', 0),
-                'time_remaining': data.get('time_remaining', 0),  # Minutes
+                'battery_soc': round(current.battery_soc, 1),
+                'grid_status': grid_status,
+                'battery_power': round(current.battery_use, 0),
+                'solar_power': round(current.solar_production, 0),
+                'home_consumption': round(current.home_load, 0),
+                'grid_power': round(current.grid_use, 0),
             }
             
             return status
         except Exception as e:
             logger.error(f"Error getting battery status: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
             
     def save_status(self, status):
-        """Save current status to file for web UI"""
         try:
             Path(STATUS_FILE).parent.mkdir(parents=True, exist_ok=True)
             with open(STATUS_FILE, 'w') as f:
@@ -232,7 +218,6 @@ class FranklinWHMonitor:
             logger.error(f"Error saving status: {e}")
             
     def send_notification(self, subject, message):
-        """Send notification via Unraid notification system"""
         try:
             cmd = f'/usr/local/emhttp/webGui/scripts/notify -s "{subject}" -d "{message}" -i alert'
             subprocess.run(cmd, shell=True, check=True)
@@ -241,7 +226,6 @@ class FranklinWHMonitor:
             logger.error(f"Error sending notification: {e}")
             
     def enter_low_power_mode(self):
-        """Reduce server power consumption"""
         if self.low_power_mode:
             return
             
@@ -251,20 +235,9 @@ class FranklinWHMonitor:
             "Battery below threshold. Reducing server power consumption."
         )
         
-        try:
-            # Spin down array if configured
-            action = self.config.get('GRID_OUTAGE_ACTION', 'low_power')
-            if action in ['low_power', 'shutdown']:
-                # You can add custom commands here
-                # subprocess.run(['/usr/local/sbin/emcmd', 'cmdSpindown=All'], check=True)
-                pass
-                
-            self.low_power_mode = True
-        except Exception as e:
-            logger.error(f"Error entering low power mode: {e}")
+        self.low_power_mode = True
             
     def initiate_shutdown(self):
-        """Initiate graceful server shutdown"""
         if self.shutdown_initiated:
             return
             
@@ -283,7 +256,6 @@ class FranklinWHMonitor:
             logger.error(f"Error initiating shutdown: {e}")
             
     def monitor_loop(self):
-        """Main monitoring loop"""
         check_interval = int(self.config.get('CHECK_INTERVAL', '60'))
         shutdown_threshold = int(self.config.get('SHUTDOWN_THRESHOLD', '20'))
         low_power_threshold = int(self.config.get('LOW_POWER_THRESHOLD', '50'))
@@ -305,7 +277,6 @@ class FranklinWHMonitor:
                     
                     logger.info(f"Battery: {battery_soc}%, Grid: {grid_status}")
                     
-                    # Detect grid outage
                     grid_online = grid_status != 'offline'
                     if not grid_online and self.last_grid_status:
                         logger.warning("Grid outage detected!")
@@ -323,7 +294,6 @@ class FranklinWHMonitor:
                         
                     self.last_grid_status = grid_online
                     
-                    # Check thresholds during grid outage
                     if not grid_online:
                         if battery_soc <= shutdown_threshold:
                             self.initiate_shutdown()
@@ -341,7 +311,6 @@ class FranklinWHMonitor:
         logger.info("Monitor loop terminated")
         
     def run(self):
-        """Start the monitor"""
         logger.info("FranklinWH Monitor starting...")
         
         if self.config.get('SERVICE', 'disable') != 'enable':
@@ -357,30 +326,34 @@ class FranklinWHMonitor:
 if __name__ == "__main__":
     monitor = FranklinWHMonitor()
     monitor.run()
-</INLINE>
+]]></INLINE>
 </FILE>
 
 <FILE Name="/etc/rc.d/rc.franklinwh" Mode="0755">
 <INLINE>
-#!/bin/bash
-# Start/Stop FranklinWH monitor service
+<![CDATA[#!/bin/bash
 
 DAEMON="franklinwh_monitor.py"
 DAEMON_PATH="/usr/local/emhttp/plugins/franklinwh"
 PID_FILE="/var/run/franklinwh.pid"
 
 franklinwh_start() {
-    # Check if already running
-    if [ -f "$PID_FILE" ] &amp;&amp; kill -0 $(cat "$PID_FILE") 2&gt;/dev/null; then
-        echo "FranklinWH monitor is already running"
-        return 1
+    if [ -f "$PID_FILE" ]; then
+        OLD_PID=$(cat "$PID_FILE" 2>/dev/null)
+        if [ -n "$OLD_PID" ]; then
+            if kill -0 "$OLD_PID" 2>/dev/null; then
+                echo "FranklinWH monitor is already running"
+                return 1
+            fi
+        fi
     fi
     
     echo "Starting FranklinWH monitor..."
     cd "$DAEMON_PATH"
-    python3 "$DAEMON_PATH/$DAEMON" &amp;
-    echo $! &gt; "$PID_FILE"
-    echo "FranklinWH monitor started"
+    /usr/bin/python3 "$DAEMON_PATH/$DAEMON" &
+    PID=$!
+    echo $PID 1> "$PID_FILE"
+    echo "FranklinWH monitor started (PID: $PID)"
 }
 
 franklinwh_stop() {
@@ -391,19 +364,17 @@ franklinwh_stop() {
     
     echo "Stopping FranklinWH monitor..."
     PID=$(cat "$PID_FILE")
-    if kill -0 "$PID" 2&gt;/dev/null; then
+    if kill -0 "$PID" 2>/dev/null; then
         kill "$PID"
         
-        # Wait for process to stop
         for i in {1..10}; do
-            if ! kill -0 "$PID" 2&gt;/dev/null; then
+            if ! kill -0 "$PID" 2>/dev/null; then
                 break
             fi
             sleep 1
         done
         
-        # Force kill if still running
-        if kill -0 "$PID" 2&gt;/dev/null; then
+        if kill -0 "$PID" 2>/dev/null; then
             kill -9 "$PID"
         fi
     fi
@@ -419,13 +390,15 @@ franklinwh_restart() {
 }
 
 franklinwh_status() {
-    if [ -f "$PID_FILE" ] &amp;&amp; kill -0 $(cat "$PID_FILE") 2&gt;/dev/null; then
-        echo "FranklinWH monitor is running (PID: $(cat $PID_FILE))"
-        return 0
-    else
-        echo "FranklinWH monitor is not running"
-        return 1
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE")
+        if kill -0 "$PID" 2>/dev/null; then
+            echo "FranklinWH monitor is running (PID: $PID)"
+            return 0
+        fi
     fi
+    echo "FranklinWH monitor is not running"
+    return 1
 }
 
 case "$1" in
@@ -448,259 +421,145 @@ case "$1" in
 esac
 
 exit 0
-</INLINE>
+]]></INLINE>
 </FILE>
 
-<FILE Name="/usr/local/emhttp/plugins/&name;/&name;.page">
+<FILE Name="/usr/local/emhttp/plugins/&name;/FranklinWHSettings.page">
 <INLINE>
-Menu="OtherSettings"
+<![CDATA[Menu="OtherSettings"
 Title="FranklinWH"
-Icon="icon-bolt"
+Icon="franklinwh-icon.png"
 ---
-</INLINE>
-</FILE>
-
-<FILE Name="/usr/local/emhttp/plugins/&name;/&name;.php">
-<INLINE>
-&lt;?php
-/* Copyright 2024, Joshua Seidel
- * FranklinWH Power Management for Unraid
- */
+<?php
+/* Copyright 2024, Joshua Seidel */
 require_once '/usr/local/emhttp/plugins/dynamix/include/Wrappers.php';
 
 $cfg = parse_ini_file('/boot/config/plugins/franklinwh/franklinwh.cfg');
 $status_file = '/var/local/emhttp/franklinwh_status.json';
 $status = file_exists($status_file) ? json_decode(file_get_contents($status_file), true) : [];
-?&gt;
+?>
 
-&lt;style&gt;
-.franklinwh-status {
-    background: #1c1c1c;
-    border-radius: 8px;
-    padding: 20px;
-    margin: 20px 0;
-}
-
-.status-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 20px;
-    margin-top: 20px;
-}
-
-.status-card {
-    background: #2a2a2a;
-    border-radius: 6px;
-    padding: 15px;
-    border-left: 4px solid #4CAF50;
-}
-
-.status-card.warning {
-    border-left-color: #FF9800;
-}
-
-.status-card.critical {
-    border-left-color: #F44336;
-}
-
-.status-value {
-    font-size: 2em;
-    font-weight: bold;
-    color: #4CAF50;
-    margin: 10px 0;
-}
-
-.status-label {
-    color: #999;
-    font-size: 0.9em;
-    text-transform: uppercase;
-}
-
-.battery-indicator {
-    width: 100%;
-    height: 40px;
-    background: #333;
-    border-radius: 4px;
-    overflow: hidden;
-    position: relative;
-    margin: 10px 0;
-}
-
-.battery-level {
-    height: 100%;
-    background: linear-gradient(90deg, #4CAF50, #8BC34A);
-    transition: width 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: bold;
-}
-&lt;/style&gt;
-
-&lt;div class="franklinwh-status"&gt;
-    &lt;h2&gt;FranklinWH Battery System Status&lt;/h2&gt;
-    
-    &lt;?php if (!empty($status)): ?&gt;
-        &lt;div class="battery-indicator"&gt;
-            &lt;div class="battery-level" style="width: &lt;?= $status['battery_soc'] ?&gt;%;"&gt;
-                &lt;?= $status['battery_soc'] ?&gt;%
-            &lt;/div&gt;
-        &lt;/div&gt;
-        
-        &lt;div class="status-grid"&gt;
-            &lt;div class="status-card &lt;?= $status['battery_soc'] &lt; 20 ? 'critical' : ($status['battery_soc'] &lt; 50 ? 'warning' : '') ?&gt;"&gt;
-                &lt;div class="status-label"&gt;Battery Charge&lt;/div&gt;
-                &lt;div class="status-value"&gt;&lt;?= $status['battery_soc'] ?&gt;%&lt;/div&gt;
-            &lt;/div&gt;
-            
-            &lt;div class="status-card"&gt;
-                &lt;div class="status-label"&gt;Grid Status&lt;/div&gt;
-                &lt;div class="status-value" style="font-size: 1.5em;"&gt;&lt;?= ucfirst($status['grid_status']) ?&gt;&lt;/div&gt;
-            &lt;/div&gt;
-            
-            &lt;div class="status-card"&gt;
-                &lt;div class="status-label"&gt;Battery Power&lt;/div&gt;
-                &lt;div class="status-value"&gt;&lt;?= number_format($status['battery_power']) ?&gt; W&lt;/div&gt;
-            &lt;/div&gt;
-            
-            &lt;div class="status-card"&gt;
-                &lt;div class="status-label"&gt;Solar Power&lt;/div&gt;
-                &lt;div class="status-value"&gt;&lt;?= number_format($status['solar_power']) ?&gt; W&lt;/div&gt;
-            &lt;/div&gt;
-            
-            &lt;div class="status-card"&gt;
-                &lt;div class="status-label"&gt;Home Consumption&lt;/div&gt;
-                &lt;div class="status-value"&gt;&lt;?= number_format($status['home_consumption']) ?&gt; W&lt;/div&gt;
-            &lt;/div&gt;
-            
-            &lt;div class="status-card"&gt;
-                &lt;div class="status-label"&gt;Time Remaining&lt;/div&gt;
-                &lt;div class="status-value"&gt;&lt;?= floor($status['time_remaining'] / 60) ?&gt;h &lt;?= $status['time_remaining'] % 60 ?&gt;m&lt;/div&gt;
-            &lt;/div&gt;
-        &lt;/div&gt;
-        
-        &lt;p style="color: #666; margin-top: 20px;"&gt;Last updated: &lt;?= date('Y-m-d H:i:s', strtotime($status['timestamp'])) ?&gt;&lt;/p&gt;
-    &lt;?php else: ?&gt;
-        &lt;p style="color: #FF9800;"&gt;No status data available. Please check if the service is running and configured correctly.&lt;/p&gt;
-    &lt;?php endif; ?&gt;
-&lt;/div&gt;
-
-&lt;form markdown="1" method="POST" action="/update.php" target="progressFrame"&gt;
-&lt;input type="hidden" name="#file" value="franklinwh/franklinwh.cfg"&gt;
-&lt;input type="hidden" name="#prefix" value=""&gt;
+<form markdown="1" method="POST" action="/update.php" target="progressFrame">
+<input type="hidden" name="#file" value="franklinwh/franklinwh.cfg">
+<input type="hidden" name="#prefix" value="">
 
 Service:
-: &lt;select name="SERVICE" size="1"&gt;
-    &lt;?=mk_option($cfg['SERVICE'], "disable", "Disabled");?&gt;
-    &lt;?=mk_option($cfg['SERVICE'], "enable", "Enabled");?&gt;
-  &lt;/select&gt;
+: <select name="SERVICE">
+    <?=mk_option($cfg['SERVICE'],'disable','Disabled')?>
+    <?=mk_option($cfg['SERVICE'],'enable','Enabled')?>
+  </select>
 
-&gt; Enable or disable the FranklinWH monitoring service
+> Enable or disable the FranklinWH monitoring service
 
-Gateway ID:
-: &lt;input type="text" name="GATEWAY_ID" value="&lt;?=$cfg['GATEWAY_ID'];?&gt;" placeholder="Your FranklinWH Gateway ID"&gt;
+FranklinWH Username (Email):
+: <input type="text" name="USERNAME" value="<?=$cfg['USERNAME']?>" placeholder="your@email.com">
 
-&gt; Enter your FranklinWH Gateway ID from the FranklinWH app
+> Your FranklinWH account email
 
-Access Token:
-: &lt;input type="password" name="ACCESS_TOKEN" value="&lt;?=$cfg['ACCESS_TOKEN'];?&gt;" placeholder="Your FranklinWH Access Token"&gt;
+FranklinWH Password:
+: <input type="password" name="PASSWORD" value="<?=$cfg['PASSWORD']?>" placeholder="Your password">
 
-&gt; Enter your FranklinWH Access Token (keep this secure)
+> Your FranklinWH account password
+
+FranklinWH Gateway ID:
+: <input type="text" name="GATEWAY_ID" value="<?=$cfg['GATEWAY_ID']?>" placeholder="Your gateway serial number">
+
+> Find this in your FranklinWH app under More -> Site Address (shown as SN)
 
 Check Interval (seconds):
-: &lt;input type="number" name="CHECK_INTERVAL" min="30" max="600" value="&lt;?=$cfg['CHECK_INTERVAL'];?&gt;"&gt;
+: <input type="number" name="CHECK_INTERVAL" min="30" max="600" value="<?=$cfg['CHECK_INTERVAL']?>">
 
-&gt; How often to check battery status (30-600 seconds)
+> How often to check battery status (30-600 seconds)
 
 Low Power Threshold (%):
-: &lt;input type="number" name="LOW_POWER_THRESHOLD" min="10" max="100" value="&lt;?=$cfg['LOW_POWER_THRESHOLD'];?&gt;"&gt;
+: <input type="number" name="LOW_POWER_THRESHOLD" min="10" max="100" value="<?=$cfg['LOW_POWER_THRESHOLD']?>">
 
-&gt; Battery percentage to trigger low power mode
+> Battery % to trigger low power mode
 
 Shutdown Threshold (%):
-: &lt;input type="number" name="SHUTDOWN_THRESHOLD" min="5" max="50" value="&lt;?=$cfg['SHUTDOWN_THRESHOLD'];?&gt;"&gt;
+: <input type="number" name="SHUTDOWN_THRESHOLD" min="5" max="50" value="<?=$cfg['SHUTDOWN_THRESHOLD']?>">
 
-&gt; Battery percentage to trigger automatic shutdown
+> Battery % to trigger automatic shutdown
 
 Grid Outage Action:
-: &lt;select name="GRID_OUTAGE_ACTION" size="1"&gt;
-    &lt;?=mk_option($cfg['GRID_OUTAGE_ACTION'], "monitor", "Monitor Only");?&gt;
-    &lt;?=mk_option($cfg['GRID_OUTAGE_ACTION'], "low_power", "Low Power Mode");?&gt;
-    &lt;?=mk_option($cfg['GRID_OUTAGE_ACTION'], "shutdown", "Auto Shutdown");?&gt;
-  &lt;/select&gt;
+: <select name="GRID_OUTAGE_ACTION">
+    <?=mk_option($cfg['GRID_OUTAGE_ACTION'],'monitor','Monitor Only')?>
+    <?=mk_option($cfg['GRID_OUTAGE_ACTION'],'low_power','Low Power Mode')?>
+    <?=mk_option($cfg['GRID_OUTAGE_ACTION'],'shutdown','Auto Shutdown')?>
+  </select>
 
-&gt; Action to take during grid outage
+> Action to take during grid outage
 
 Shutdown Delay (seconds):
-: &lt;input type="number" name="SHUTDOWN_DELAY" min="60" max="3600" value="&lt;?=$cfg['SHUTDOWN_DELAY'];?&gt;"&gt;
+: <input type="number" name="SHUTDOWN_DELAY" min="60" max="3600" value="<?=$cfg['SHUTDOWN_DELAY']?>">
 
-&gt; Delay before shutdown is executed (60-3600 seconds)
+> Delay before shutdown executes (60-3600 seconds)
 
-&lt;input type="submit" value="Apply" onclick="return verifyConfig();"&gt;
-&lt;input type="button" value="Done" onclick="done()"&gt;
-&lt;/form&gt;
+<input type="submit" value="Apply">
+<input type="button" value="Done" onclick="done()">
+</form>
 
-&lt;script&gt;
-function verifyConfig() {
-    var gatewayId = document.getElementsByName('GATEWAY_ID')[0].value;
-    var accessToken = document.getElementsByName('ACCESS_TOKEN')[0].value;
-    var service = document.getElementsByName('SERVICE')[0].value;
+<div style="background:#1c1c1c;border-radius:8px;padding:20px;margin:20px 0;">
+    <h2>FranklinWH Battery Status</h2>
     
-    if (service === 'enable' &amp;&amp; (!gatewayId || !accessToken)) {
-        swal({
-            title: 'Configuration Error',
-            text: 'Gateway ID and Access Token are required when service is enabled',
-            type: 'error'
-        });
-        return false;
-    }
-    
-    return true;
-}
+    <?php if (!empty($status)): ?>
+        <div style="width:100%;height:40px;background:#333;border-radius:4px;margin:10px 0;">
+            <div style="width:<?=$status['battery_soc']?>%;height:100%;background:linear-gradient(90deg,#4CAF50,#8BC34A);display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;">
+                <?=$status['battery_soc']?>%
+            </div>
+        </div>
+        
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-top:20px;">
+            <div style="background:#2a2a2a;padding:15px;border-radius:6px;border-left:4px solid #4CAF50;">
+                <div style="color:#999;font-size:0.9em;">Battery Charge</div>
+                <div style="font-size:2em;font-weight:bold;color:#4CAF50;"><?=$status['battery_soc']?>%</div>
+            </div>
+            
+            <div style="background:#2a2a2a;padding:15px;border-radius:6px;border-left:4px solid #4CAF50;">
+                <div style="color:#999;font-size:0.9em;">Grid Status</div>
+                <div style="font-size:1.5em;font-weight:bold;color:#4CAF50;"><?=ucfirst($status['grid_status'])?></div>
+            </div>
+            
+            <div style="background:#2a2a2a;padding:15px;border-radius:6px;border-left:4px solid #4CAF50;">
+                <div style="color:#999;font-size:0.9em;">Battery Power</div>
+                <div style="font-size:1.5em;font-weight:bold;color:#4CAF50;"><?=number_format($status['battery_power'])?> W</div>
+            </div>
+        </div>
+        
+        <p style="color:#666;margin-top:20px;">Last updated: <?=date('Y-m-d H:i:s',strtotime($status['timestamp']))?></p>
+    <?php else: ?>
+        <p style="color:#FF9800;">No status data available. Please enable the service and configure your credentials.</p>
+    <?php endif; ?>
+</div>
 
-// Auto-refresh status every 60 seconds
-setInterval(function() {
-    location.reload();
-}, 60000);
-&lt;/script&gt;
-</INLINE>
+<script>
+setInterval(function(){location.reload();},60000);
+</script>
+]]></INLINE>
 </FILE>
 
 <FILE Run="/bin/bash">
 <INLINE>
-# Set permissions
-chmod +x /usr/local/emhttp/plugins/&name;/franklinwh_monitor.py
-chmod +x /etc/rc.d/rc.franklinwh
+<![CDATA[
+# Download icon
+curl -s -o /usr/local/emhttp/plugins/franklinwh/franklinwh-icon.png \
+  "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master/franklinwh-icon.png"
 
-# Check if service should be started
-source /boot/config/plugins/&name;/&name;.cfg
+# Set permissions
+chmod +x /usr/local/emhttp/plugins/franklinwh/franklinwh_monitor.py
+chmod +x /etc/rc.d/rc.franklinwh
+chmod 644 /usr/local/emhttp/plugins/franklinwh/*.page
+chmod 644 /usr/local/emhttp/plugins/franklinwh/*.php
+
+# Start service if enabled
+source /boot/config/plugins/franklinwh/franklinwh.cfg
 if [ "$SERVICE" = "enable" ]; then
     /etc/rc.d/rc.franklinwh restart
 fi
 
 echo "FranklinWH plugin installed successfully"
-</INLINE>
-</FILE>
-
-<FILE Run="/bin/bash" UnInstall="true">
-<INLINE>
-# Stop service
-/etc/rc.d/rc.franklinwh stop 2&gt;/dev/null
-
-# Remove files
-rm -rf /usr/local/emhttp/plugins/&name;
-rm -f /etc/rc.d/rc.franklinwh
-rm -f /var/local/emhttp/franklinwh_status.json
-rm -f /var/run/franklinwh.pid
-rm -f /var/log/franklinwh.log
-
-# Remove Python packages (optional, as other plugins might use them)
-# pip3 uninstall -y franklinwh
-
-echo "FranklinWH plugin uninstalled"
+]]>
 </INLINE>
 </FILE>
 
 </PLUGIN>
-

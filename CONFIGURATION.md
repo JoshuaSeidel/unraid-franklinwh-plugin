@@ -1,5 +1,7 @@
 # Configuration Guide - FranklinWH Unraid Plugin
 
+**Version 1.0.0**
+
 This guide provides detailed information about all configuration options and best practices for the FranklinWH Power Management Plugin.
 
 ## Configuration File Location
@@ -32,43 +34,46 @@ SERVICE="enable"
 - When troubleshooting other issues
 - If traveling and server is at remote location
 
-### GATEWAY_ID
+### USERNAME
 **Type**: String  
-**Format**: `FWH-XXXXXX`  
+**Format**: Email address  
 **Required**: Yes (when service enabled)
 
-Your FranklinWH Gateway identifier.
+Your FranklinWH account email address.
 
 ```bash
-GATEWAY_ID="FWH-123456"
+USERNAME="your@email.com"
+```
+
+### PASSWORD
+**Type**: String  
+**Required**: Yes (when service enabled)
+
+Your FranklinWH account password.
+
+```bash
+PASSWORD="your_password"
+```
+
+**Security Note**: This password is stored in plain text in the configuration file. Ensure your Unraid server is properly secured.
+
+### GATEWAY_ID
+**Type**: String  
+**Format**: `10060005A02X########`  
+**Required**: Yes (when service enabled)
+
+Your FranklinWH Gateway identifier (Serial Number).
+
+```bash
+GATEWAY_ID="10060005A02X24420359"
 ```
 
 **How to find**:
 1. Open FranklinWH mobile app
-2. Navigate to Settings → System Info
-3. Copy the Gateway ID displayed
+2. Navigate to More → Site Address
+3. Copy the SN (Serial Number) displayed
 
-**Security note**: While not as sensitive as the access token, avoid sharing publicly.
-
-### ACCESS_TOKEN
-**Type**: String  
-**Required**: Yes (when service enabled)
-
-Your FranklinWH API authentication token.
-
-```bash
-ACCESS_TOKEN="your_secret_token_here"
-```
-
-**How to obtain**:
-- Contact FranklinWH support
-- Or use authentication flow via Python API
-
-**Security notes**:
-- Never share this token
-- Never commit to version control
-- This token provides full API access to your system
-- The config file is only readable by root user
+**Security note**: While not as sensitive as your password, avoid sharing publicly.
 
 ### CHECK_INTERVAL
 **Type**: Integer  

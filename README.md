@@ -1,8 +1,8 @@
 # FranklinWH Power Management Plugin for Unraid
 
-A comprehensive Unraid plugin that integrates with your FranklinWH home battery system to intelligently manage server power during grid outages. Similar to the NUT (Network UPS Tools) plugin for traditional UPS systems, this plugin monitors battery levels and can automatically reduce power consumption or initiate graceful shutdowns.
+**Version 1.0.0**
 
-![FranklinWH Logo](https://www.franklinwh.com/images/logo.png)
+A comprehensive Unraid plugin that integrates with your FranklinWH home battery system to intelligently manage server power during grid outages. Similar to the NUT (Network UPS Tools) plugin for traditional UPS systems, this plugin monitors battery levels and can automatically reduce power consumption or initiate graceful shutdowns.
 
 ## Features
 
@@ -34,8 +34,9 @@ A comprehensive Unraid plugin that integrates with your FranklinWH home battery 
 
 - **Unraid 6.9.0 or newer**
 - **FranklinWH Home Battery System** with network connectivity
-- **FranklinWH Account** with valid credentials
-- **Python 3** (usually pre-installed on Unraid)
+- **FranklinWH Account** with valid credentials (username/password)
+- **Gateway ID** from your FranklinWH mobile app
+- **Python 3** (install via NerdTools plugin if not already installed)
 
 ## Installation
 
@@ -65,24 +66,15 @@ A comprehensive Unraid plugin that integrates with your FranklinWH home battery 
 
 ### Getting Your FranklinWH Credentials
 
-1. **Install the FranklinWH App** on your smartphone
-   - iOS: [App Store](https://apps.apple.com/app/franklinwh/id1533243540)
-   - Android: [Google Play](https://play.google.com/store/apps/details?id=com.franklinwh.app)
+1. **FranklinWH Account**: Use your existing FranklinWH account username (email) and password
 
-2. **Log in to your FranklinWH account**
-
-3. **Find Your Gateway ID**
-   - Open the app
-   - Go to Settings → System Info
-   - Your Gateway ID is displayed (format: `FWH-XXXXXX`)
-
-4. **Obtain Your Access Token**
-   - Method 1: Contact FranklinWH support
-   - Method 2: Use the Python API to authenticate:
-     ```python
-     from franklinwh import FranklinWH
-     # Authentication method varies by region
-     ```
+2. **Find Your Gateway ID**:
+   - Install the FranklinWH App on your smartphone
+     - iOS: [App Store](https://apps.apple.com/app/franklinwh/id1533243540)
+     - Android: [Google Play](https://play.google.com/store/apps/details?id=com.franklinwh.app)
+   - Log in to your account
+   - Go to **More → Site Address**
+   - Your Gateway ID is shown as **SN** (format: `10060005A02X########`)
 
 ### Plugin Configuration
 
@@ -90,8 +82,9 @@ A comprehensive Unraid plugin that integrates with your FranklinWH home battery 
 
 2. **Basic Settings**:
    - **Service**: Enable/Disable the monitoring service
-   - **Gateway ID**: Your FranklinWH Gateway ID
-   - **Access Token**: Your FranklinWH API access token
+   - **FranklinWH Username (Email)**: Your FranklinWH account email
+   - **FranklinWH Password**: Your FranklinWH account password
+   - **FranklinWH Gateway ID**: Your Gateway ID (SN from the app)
    - **Check Interval**: How often to poll battery status (30-600 seconds, default: 60)
 
 3. **Power Management Settings**:
@@ -155,7 +148,7 @@ tail -f /var/log/franklinwh.log
 ```
 
 Common issues:
-- Invalid Gateway ID or Access Token
+- Invalid credentials (username, password, or Gateway ID)
 - Network connectivity to FranklinWH system
 - Python dependencies not installed
 
@@ -317,32 +310,76 @@ python3 --version
 
 ## Security
 
-- **Access Tokens**: Stored locally on your Unraid server
-- **Network Traffic**: Direct communication with your FranklinWH gateway (local network)
-- **No Cloud Dependency**: Works during internet outages (if FranklinWH is on local network)
+- **Credentials**: Stored locally on your Unraid server (username, password, gateway ID)
+- **API Communication**: Secure HTTPS connection to FranklinWH Cloud API
+- **Authentication**: Uses franklinwh library v0.6.0 with token-based API access
 
-**Important**: Keep your Access Token secure. Do not share your configuration file publicly.
+**Important**: Keep your credentials secure. Do not share your configuration file publicly.
 
 ## Changelog
 
-### Version 2024.11.06 (Initial Release)
-- ✨ Initial release
-- 🔋 FranklinWH battery monitoring integration
-- ⚡ Grid outage detection and response
-- ⚙️ Configurable power thresholds for shutdown
-- 🎨 Web UI for configuration and monitoring
-- 🔔 Notification support
-- 📝 Similar functionality to NUT plugin for UPS monitoring
+### Version 1.0.0 (November 6, 2024)
+
+**Initial Release** 🎉
+
+#### Core Features
+- ✅ **Real-time Battery Monitoring**: Track SOC, power flow, grid status, and home consumption via FranklinWH Cloud API
+- ✅ **Grid Outage Detection**: Automatic detection when grid goes offline/online
+- ✅ **Smart Power Management**: Configurable thresholds for low power mode and automatic shutdown
+- ✅ **Web-Based Configuration**: Integrated Settings page in Unraid web UI
+- ✅ **Live Status Display**: Beautiful real-time dashboard with battery gauge and power metrics
+- ✅ **Unraid Notifications**: Native integration with Unraid notification system
+- ✅ **Python Monitoring Daemon**: Robust background service with graceful shutdown handling
+- ✅ **Simple Authentication**: Username/password + Gateway ID (no manual token management)
+
+#### Technical Details
+- Uses franklinwh Python library v0.6.0
+- Compatible with Unraid 6.9.0+
+- Requires Python 3
+- 60-second polling interval (configurable 30-600s)
+- Persistent configuration on USB boot device
+
+#### Documentation
+- Comprehensive README with features and quick start
+- Detailed installation guide with step-by-step instructions
+- Complete configuration reference
+- Troubleshooting guide with common issues and solutions
 
 ## Roadmap
 
-- [ ] Historical data logging and graphs
+Future enhancements being considered:
+
+### v1.1.0 - Enhanced Monitoring
+- [ ] Historical data logging and graphing
+- [ ] Energy statistics (daily/weekly/monthly summaries)
+- [ ] CSV/JSON export of historical data
+- [ ] Customizable dashboard refresh intervals
+
+### v1.2.0 - Multi-System Support
 - [ ] Multiple FranklinWH gateway support
-- [ ] Advanced scheduling (e.g., shutdown during specific hours)
-- [ ] Integration with other Unraid plugins
+- [ ] System comparison and aggregation
+- [ ] Per-gateway configuration profiles
+
+### v1.3.0 - Advanced Automation
+- [ ] Time-based scheduling (shutdown during specific hours)
+- [ ] Calendar integration for planned outages
+- [ ] Custom action scripts (pre-shutdown, post-restore)
+- [ ] Integration with other Unraid plugins (VM manager, Docker)
+
+### v2.0.0 - Extended Features
 - [ ] REST API for external monitoring
-- [ ] Mobile app notifications
+- [ ] Prometheus/Grafana integration
+- [ ] Email/SMS/Push notifications
+- [ ] Local API support (reduce cloud dependency)
+- [ ] Advanced power management modes
+
+### Community
+- [x] GitHub repository with issue tracking
 - [ ] Community Applications listing
+- [ ] Unraid forum thread
+- [ ] User contributed scripts and configurations
+
+**Want to contribute?** Open an issue or pull request on [GitHub](https://github.com/JoshuaSeidel/unraid-franklinwh-plugin)
 
 ## License
 

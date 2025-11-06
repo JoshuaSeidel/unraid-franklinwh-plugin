@@ -1,5 +1,7 @@
 # Installation Guide - FranklinWH Unraid Plugin
 
+**Version 1.0.0**
+
 This guide walks you through the complete installation and setup process for the FranklinWH Power Management Plugin.
 
 ## Prerequisites
@@ -9,10 +11,17 @@ Before installing the plugin, ensure you have:
 1. ✅ **Unraid 6.9.0 or newer** installed and running
 2. ✅ **FranklinWH Home Battery System** installed and operational
 3. ✅ **Network connectivity** between Unraid server and FranklinWH gateway
-4. ✅ **FranklinWH account credentials** (Gateway ID and Access Token)
-5. ✅ **Internet access** on Unraid server (for initial installation only)
+4. ✅ **FranklinWH account credentials** (username, password, and Gateway ID)
+5. ✅ **Python 3** installed via NerdTools plugin
+6. ✅ **Internet access** on Unraid server (for initial installation only)
 
 ## Step 1: Obtain FranklinWH Credentials
+
+### Account Credentials
+
+You'll need your FranklinWH account credentials:
+- **Username**: Your FranklinWH account email address
+- **Password**: Your FranklinWH account password
 
 ### Gateway ID
 
@@ -22,35 +31,13 @@ Before installing the plugin, ensure you have:
 
 2. Log in to your FranklinWH account
 
-3. Navigate to: **Settings → System Info**
+3. Navigate to: **More → Site Address**
 
-4. Your **Gateway ID** will be displayed (format: `FWH-XXXXXX`)
+4. Your **Gateway ID** (shown as **SN**) will be displayed (format: `10060005A02X########`)
    - Write this down or take a screenshot
+   - This is a unique identifier for your FranklinWH system
 
-### Access Token
-
-The Access Token is required for API access. You can obtain it through:
-
-#### Option 1: Contact FranklinWH Support
-- Email: support@franklinwh.com
-- Explain you need API access for home automation
-- Provide your Gateway ID
-
-#### Option 2: Use the Python API (Advanced)
-```bash
-# SSH into your Unraid server
-pip3 install franklinwh
-
-# Run Python interactive shell
-python3
-
-# In Python shell:
-from franklinwh import FranklinWH
-# Follow authentication prompts
-# Token will be provided after successful authentication
-```
-
-**Important**: Keep your Access Token secure! Treat it like a password.
+**Important**: Keep your credentials secure! Your password provides access to your FranklinWH system.
 
 ## Step 2: Install the Plugin
 
@@ -107,8 +94,9 @@ Once the plugin is published to Community Applications:
    | Setting | Value | Description |
    |---------|-------|-------------|
    | **Service** | Disabled | Leave disabled during initial setup |
-   | **Gateway ID** | `FWH-XXXXXX` | Your FranklinWH Gateway ID |
-   | **Access Token** | `your-token-here` | Your API access token |
+   | **Username** | `your@email.com` | Your FranklinWH account email |
+   | **Password** | `your_password` | Your FranklinWH account password |
+   | **Gateway ID** | `10060005A02X########` | Your Gateway ID (SN from app) |
    | **Check Interval** | `60` | Seconds between status checks (30-600) |
 
 4. **Click Apply** (but don't enable service yet)
@@ -138,9 +126,9 @@ Before enabling the service, test the connection:
 ### Troubleshooting Connection Issues
 
 **Error: "Invalid credentials"**
-- Verify Gateway ID and Access Token are correct
-- Check for extra spaces or quotes
-- Ensure Access Token hasn't expired
+- Verify Username, Password, and Gateway ID are correct
+- Check for extra spaces or quotes in credentials
+- Ensure your FranklinWH account is active
 
 **Error: "Connection timeout"**
 - Verify FranklinWH gateway is powered on
