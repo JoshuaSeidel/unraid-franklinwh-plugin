@@ -3,7 +3,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "franklinwh">
 <!ENTITY author    "Joshua Seidel">
-<!ENTITY version   "1.1.7">
+<!ENTITY version   "1.1.8">
 <!ENTITY launch    "Settings/FranklinWHSettings">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master">
 <!ENTITY pluginURL "&gitURL;/franklinwh.plg">
@@ -13,6 +13,13 @@
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" icon="&icon;" min="6.9.0" support="https://github.com/JoshuaSeidel/unraid-franklinwh-plugin/issues">
 
 <CHANGES>
+###1.1.8
+- FIXED: Removed ALL extra colons (were from &amp;nbsp; lines)
+- FIXED: Container list now shows when toggling Yes→No→Yes
+- FIXED: Panel div always exists in DOM (just hidden with CSS)
+- IMPROVED: Smart reload logic (only reloads if list is empty)
+- IMPROVED: JavaScript checks container list content before reload
+
 ###1.1.7
 - FIXED: Container panel now positioned fixed on right side of screen
 - FIXED: Panel shows immediately when Docker=Yes (PHP conditional)
@@ -1007,9 +1014,6 @@ Shutdown Delay (seconds):
 
 > Delay before shutdown executes (60-3600 seconds)
 
-&nbsp;
-:
-
 ---
 
 ### Historical Data Settings (v1.1.0+)
@@ -1031,9 +1035,6 @@ History Retention (days):
 : <input type="number" name="HISTORY_RETENTION_DAYS" min="7" max="365" value="<?=$cfg['HISTORY_RETENTION_DAYS']?>">
 
 > How long to keep historical data (7-365 days, default: 90)
-
-&nbsp;
-:
 
 ---
 
@@ -1065,11 +1066,10 @@ Docker Stop Timeout (seconds):
 
 > Maximum time per container to wait for graceful stop (10-300 seconds, default: 30)
 
-<?php if ($cfg['SHUTDOWN_DOCKER'] == 'yes'): ?>
-<div id="docker_container_section" style="position:fixed;top:180px;right:40px;width:380px;background:#1c1c1c;border-radius:8px;padding:20px;border:1px solid #333;box-shadow:0 4px 6px rgba(0,0,0,0.3);z-index:1000;max-height:calc(100vh - 220px);overflow-y:auto;">
+<div id="docker_container_section" style="position:fixed;top:180px;right:40px;width:380px;background:#1c1c1c;border-radius:8px;padding:20px;border:1px solid #333;box-shadow:0 4px 6px rgba(0,0,0,0.3);z-index:1000;max-height:calc(100vh - 220px);overflow-y:auto;display:<?=$cfg['SHUTDOWN_DOCKER']=='yes'?'block':'none'?>;">
 <h3 style="margin:0 0 15px 0;color:#4CAF50;font-size:1.1em;border-bottom:1px solid #333;padding-bottom:10px;">Containers to Stop</h3>
-<div style="background:#2a2a2a;padding:12px;border-radius:6px;max-height:400px;overflow-y:auto;">
-    <?php
+<div id="docker_container_list" style="background:#2a2a2a;padding:12px;border-radius:6px;max-height:400px;overflow-y:auto;">
+    <?php if ($cfg['SHUTDOWN_DOCKER'] == 'yes'):
     // Get list of running Docker containers with icons
     $containers = [];
     $docker_cmd = 'docker ps --format "{{.Names}}|{{.Image}}|{{.ID}}" 2>/dev/null';
@@ -1151,6 +1151,7 @@ Docker Stop Timeout (seconds):
         
         echo '</div>';
     }
+    endif;
     ?>
     <input type="hidden" name="DOCKER_STOP_ORDER" id="docker_stop_order_hidden" value="<?=htmlspecialchars($cfg['DOCKER_STOP_ORDER'])?>">
 </div>
@@ -1158,9 +1159,6 @@ Docker Stop Timeout (seconds):
 <i class="fa fa-info-circle"></i> <strong>Toggle ON</strong> to stop. <strong>Drag</strong> to set priority (top = first).
 </p>
 </div>
-<?php endif; ?>
-
-&nbsp;
 
 <style>
 /* Modern Toggle Switch */
@@ -1233,13 +1231,19 @@ Docker Stop Timeout (seconds):
 <script>
 function toggleDockerSettings(value) {
     var section = document.getElementById('docker_container_section');
+    var containerList = document.getElementById('docker_container_list');
+    
     if (section) {
         if (value === 'yes') {
-            section.style.display = 'block';
-            // Reload page to show containers
-            setTimeout(function() {
-                location.reload();
-            }, 100);
+            // Check if containers are already loaded
+            if (containerList && containerList.innerHTML.trim() === '') {
+                // Need to reload to fetch containers
+                setTimeout(function() {
+                    location.reload();
+                }, 100);
+            } else {
+                section.style.display = 'block';
+            }
         } else {
             section.style.display = 'none';
         }
