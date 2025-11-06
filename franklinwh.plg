@@ -3,7 +3,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "franklinwh">
 <!ENTITY author    "Joshua Seidel">
-<!ENTITY version   "1.1.10">
+<!ENTITY version   "1.1.11">
 <!ENTITY launch    "Settings/FranklinWHSettings">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master">
 <!ENTITY pluginURL "&gitURL;/franklinwh.plg">
@@ -13,6 +13,12 @@
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" icon="&icon;" min="6.9.0" support="https://github.com/JoshuaSeidel/unraid-franklinwh-plugin/issues">
 
 <CHANGES>
+###1.1.11
+- FIXED: Container panel now flows inline with page (not fixed overlay)
+- FIXED: Panel scrolls naturally with page content
+- REMOVED: Fixed positioning, z-index, max-height restrictions
+- IMPROVED: Panel is now part of the Integration Settings section
+
 ###1.1.10
 - IMPROVED: Panel now MUCH bigger (380px → 520px width)
 - IMPROVED: Positioned closer to top (180px → 120px from top)
@@ -1082,9 +1088,9 @@ Docker Stop Timeout (seconds):
 
 > Maximum time per container to wait for graceful stop (10-300 seconds, default: 30)
 
-<div id="docker_container_section" style="position:fixed;top:120px;right:30px;width:520px;background:#1c1c1c;border-radius:8px;padding:24px;border:1px solid #333;box-shadow:0 6px 12px rgba(0,0,0,0.4);z-index:1000;max-height:calc(100vh - 140px);overflow-y:auto;display:<?=$cfg['SHUTDOWN_DOCKER']=='yes'?'block':'none'?>;">
+<div id="docker_container_section" style="background:#1c1c1c;border-radius:8px;padding:24px;margin:20px 0;border:1px solid #333;display:<?=$cfg['SHUTDOWN_DOCKER']=='yes'?'block':'none'?>;">
 <h3 style="margin:0 0 18px 0;color:#4CAF50;font-size:1.3em;border-bottom:2px solid #333;padding-bottom:12px;">Containers to Stop</h3>
-<div id="docker_container_list" style="background:#2a2a2a;padding:15px;border-radius:6px;max-height:calc(100vh - 280px);overflow-y:auto;">
+<div id="docker_container_list" style="background:#2a2a2a;padding:15px;border-radius:6px;">
     <?php
     // Get list of running Docker containers with icons (ALWAYS fetch for display)
     $containers = [];
