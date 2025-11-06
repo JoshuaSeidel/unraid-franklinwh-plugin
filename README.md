@@ -1,6 +1,6 @@
 # FranklinWH Power Management Plugin for Unraid
 
-**Version 1.0.0**
+**Version 1.1.0**
 
 A comprehensive Unraid plugin that integrates with your FranklinWH home battery system to intelligently manage server power during grid outages. Similar to the NUT (Network UPS Tools) plugin for traditional UPS systems, this plugin monitors battery levels and can automatically reduce power consumption or initiate graceful shutdowns.
 
@@ -318,6 +318,40 @@ python3 --version
 
 ## Changelog
 
+### Version 1.1.0 (November 6, 2024)
+
+**Enhanced Monitoring & Integration** 🚀
+
+#### New Features
+- ✅ **Historical Data Logging**: SQLite database stores power readings for analysis
+- ✅ **Energy Statistics**: Automatic calculation of daily, weekly, and monthly stats
+  - Average/min/max battery SOC
+  - Peak solar production
+  - Average/peak home consumption
+- ✅ **CSV Export**: Export historical data for analysis in Excel or other tools
+- ✅ **VM Integration**: Gracefully shutdown VMs before server shutdown
+  - Configurable timeout per VM
+  - Waits for clean VM shutdowns
+- ✅ **Docker Integration**: Stop containers before shutdown
+  - Configurable stop order for dependencies
+  - Configurable timeout per container
+  - Graceful stop with SIGTERM
+- ✅ **Enhanced Configuration**: New settings for history retention, VM/Docker timeouts
+
+#### Improvements
+- Enhanced status display with solar, grid, and home consumption metrics
+- Statistics dashboard showing 24h/7d/30d averages
+- Configurable history retention (7-365 days)
+- Configurable history save interval (60-3600 seconds)
+- Better error handling and logging
+- API endpoint for programmatic access
+
+#### Coming in v1.2.0
+- Interactive graphs with Chart.js
+- Real-time graphing dashboard
+- Mobile-responsive design
+- More granular statistics
+
 ### Version 1.0.0 (November 6, 2024)
 
 **Initial Release** 🎉
@@ -349,22 +383,27 @@ python3 --version
 
 Future enhancements being considered:
 
-### v1.1.0 - Enhanced Monitoring
-- [ ] Historical data logging and graphing
-- [ ] Energy statistics (daily/weekly/monthly summaries)
-- [ ] CSV/JSON export of historical data
-- [ ] Customizable dashboard refresh intervals
+### v1.1.0 - Enhanced Monitoring ✅ COMPLETED
+- [x] Historical data logging with SQLite
+- [x] Energy statistics (daily/weekly/monthly summaries)
+- [x] CSV export of historical data
+- [x] VM integration (graceful shutdown)
+- [x] Docker integration (ordered container stop)
+- [ ] Interactive graphs with Chart.js (moved to v1.2.0)
 
-### v1.2.0 - Multi-System Support
+### v1.2.0 - Advanced Visualization
+- [ ] Interactive graphs with Chart.js (battery SOC, power flow, solar)
+- [ ] Real-time graphing dashboard with zoom/pan
+- [ ] Mobile-responsive graph interface
+- [ ] Customizable time ranges for graphs
 - [ ] Multiple FranklinWH gateway support
 - [ ] System comparison and aggregation
-- [ ] Per-gateway configuration profiles
 
 ### v1.3.0 - Advanced Automation
 - [ ] Time-based scheduling (shutdown during specific hours)
 - [ ] Calendar integration for planned outages
 - [ ] Custom action scripts (pre-shutdown, post-restore)
-- [ ] Integration with other Unraid plugins (VM manager, Docker)
+- [ ] Advanced Docker orchestration (health checks, dependencies)
 
 ### v2.0.0 - Extended Features
 - [ ] REST API for external monitoring

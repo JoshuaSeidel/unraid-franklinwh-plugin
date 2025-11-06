@@ -3,7 +3,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "franklinwh">
 <!ENTITY author    "Joshua Seidel">
-<!ENTITY version   "1.0.0">
+<!ENTITY version   "1.1.0">
 <!ENTITY launch    "Settings/FranklinWHSettings">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master">
 <!ENTITY pluginURL "&gitURL;/franklinwh.plg">
@@ -13,6 +13,17 @@
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" icon="&icon;" min="6.9.0" support="https://github.com/JoshuaSeidel/unraid-franklinwh-plugin/issues">
 
 <CHANGES>
+###1.1.0
+- NEW: Historical data logging with SQLite database
+- NEW: Interactive graphs for battery SOC, power flow, and solar production
+- NEW: Energy statistics (daily, weekly, monthly summaries)
+- NEW: CSV export of historical data
+- NEW: VM Manager integration (graceful VM shutdown before server shutdown)
+- NEW: Docker integration (stop containers before shutdown with configurable order)
+- NEW: Configurable pre-shutdown actions
+- IMPROVED: Enhanced web UI with tabbed interface (Status, History, Statistics, Settings)
+- IMPROVED: Better error handling and logging
+
 ###1.0.0
 - Initial release
 - Real-time battery monitoring via FranklinWH API (franklinwh 0.6.0)
@@ -42,6 +53,18 @@ SHUTDOWN_THRESHOLD="20"
 LOW_POWER_THRESHOLD="50"
 GRID_OUTAGE_ACTION="low_power"
 SHUTDOWN_DELAY="300"
+
+# Historical Data Settings (v1.1.0+)
+ENABLE_HISTORY="yes"
+HISTORY_RETENTION_DAYS="90"
+HISTORY_INTERVAL="300"
+
+# Integration Settings (v1.1.0+)
+SHUTDOWN_VMS="yes"
+SHUTDOWN_DOCKER="yes"
+DOCKER_STOP_ORDER=""
+VM_SHUTDOWN_TIMEOUT="120"
+DOCKER_STOP_TIMEOUT="30"
 </INLINE>
 </FILE>
 
@@ -97,13 +120,17 @@ import json
 import logging
 import signal
 import subprocess
-from datetime import datetime
+import sqlite3
+import os
+from datetime import datetime, timedelta
 from pathlib import Path
 from franklinwh import Client, TokenFetcher
 
 CONFIG_FILE = "/boot/config/plugins/franklinwh/franklinwh.cfg"
 STATUS_FILE = "/var/local/emhttp/franklinwh_status.json"
 LOG_FILE = "/var/log/franklinwh.log"
+DB_FILE = "/boot/config/plugins/franklinwh/history.db"
+STATS_FILE = "/var/local/emhttp/franklinwh_stats.json"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -115,6 +142,241 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+class HistoryDatabase:
+    """Manages historical data storage in SQLite"""
+    def __init__(self, db_path):
+        self.db_path = db_path
+        self.init_database()
+    
+    def init_database(self):
+        """Initialize database schema"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS power_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME NOT NULL,
+                battery_soc REAL NOT NULL,
+                battery_power REAL NOT NULL,
+                solar_power REAL NOT NULL,
+                grid_power REAL NOT NULL,
+                home_consumption REAL NOT NULL,
+                grid_status TEXT NOT NULL
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_timestamp 
+            ON power_history(timestamp DESC)
+        ''')
+        
+        conn.commit()
+        conn.close()
+        logger.info("Historical database initialized")
+    
+    def save_reading(self, status):
+        """Save a power reading to history"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT INTO power_history 
+                (timestamp, battery_soc, battery_power, solar_power, 
+                 grid_power, home_consumption, grid_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                status['timestamp'],
+                status['battery_soc'],
+                status['battery_power'],
+                status['solar_power'],
+                status['grid_power'],
+                status['home_consumption'],
+                status['grid_status']
+            ))
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error saving to history: {e}")
+    
+    def cleanup_old_data(self, days=90):
+        """Remove data older than specified days"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cutoff = datetime.now() - timedelta(days=days)
+            cursor.execute(
+                'DELETE FROM power_history WHERE timestamp < ?',
+                (cutoff.isoformat(),)
+            )
+            
+            deleted = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            if deleted > 0:
+                logger.info(f"Cleaned up {deleted} old history records")
+        except Exception as e:
+            logger.error(f"Error cleaning history: {e}")
+    
+    def get_statistics(self, period='day'):
+        """Calculate energy statistics for a period"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            if period == 'day':
+                cutoff = datetime.now() - timedelta(days=1)
+            elif period == 'week':
+                cutoff = datetime.now() - timedelta(days=7)
+            elif period == 'month':
+                cutoff = datetime.now() - timedelta(days=30)
+            else:
+                cutoff = datetime.now() - timedelta(days=1)
+            
+            cursor.execute('''
+                SELECT 
+                    COUNT(*) as readings,
+                    AVG(battery_soc) as avg_soc,
+                    MIN(battery_soc) as min_soc,
+                    MAX(battery_soc) as max_soc,
+                    AVG(solar_power) as avg_solar,
+                    MAX(solar_power) as peak_solar,
+                    AVG(home_consumption) as avg_consumption,
+                    MAX(home_consumption) as peak_consumption
+                FROM power_history
+                WHERE timestamp > ?
+            ''', (cutoff.isoformat(),))
+            
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row and row[0] > 0:
+                return {
+                    'readings': row[0],
+                    'avg_battery_soc': round(row[1], 1) if row[1] else 0,
+                    'min_battery_soc': round(row[2], 1) if row[2] else 0,
+                    'max_battery_soc': round(row[3], 1) if row[3] else 0,
+                    'avg_solar_power': round(row[4], 0) if row[4] else 0,
+                    'peak_solar_power': round(row[5], 0) if row[5] else 0,
+                    'avg_consumption': round(row[6], 0) if row[6] else 0,
+                    'peak_consumption': round(row[7], 0) if row[7] else 0
+                }
+            return None
+        except Exception as e:
+            logger.error(f"Error calculating statistics: {e}")
+            return None
+
+class IntegrationManager:
+    """Manages VM and Docker integrations"""
+    
+    @staticmethod
+    def shutdown_vms(timeout=120):
+        """Gracefully shutdown all running VMs"""
+        try:
+            logger.info("Shutting down VMs...")
+            result = subprocess.run(
+                ['virsh', 'list', '--state-running', '--name'],
+                capture_output=True, text=True, timeout=10
+            )
+            
+            vms = [vm.strip() for vm in result.stdout.split('\n') if vm.strip()]
+            
+            if not vms:
+                logger.info("No running VMs found")
+                return True
+            
+            logger.info(f"Found {len(vms)} running VMs: {', '.join(vms)}")
+            
+            for vm in vms:
+                logger.info(f"Shutting down VM: {vm}")
+                subprocess.run(['virsh', 'shutdown', vm], timeout=5)
+            
+            # Wait for VMs to shutdown
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                result = subprocess.run(
+                    ['virsh', 'list', '--state-running', '--name'],
+                    capture_output=True, text=True, timeout=10
+                )
+                running = [vm.strip() for vm in result.stdout.split('\n') if vm.strip()]
+                
+                if not running:
+                    logger.info("All VMs shut down successfully")
+                    return True
+                
+                time.sleep(5)
+            
+            logger.warning(f"Some VMs did not shutdown within {timeout}s")
+            return False
+            
+        except subprocess.TimeoutExpired:
+            logger.error("VM shutdown command timed out")
+            return False
+        except FileNotFoundError:
+            logger.warning("virsh not found - VM management not available")
+            return True
+        except Exception as e:
+            logger.error(f"Error shutting down VMs: {e}")
+            return False
+    
+    @staticmethod
+    def stop_docker_containers(stop_order='', timeout=30):
+        """Stop Docker containers in specified order"""
+        try:
+            logger.info("Stopping Docker containers...")
+            
+            # Get list of running containers
+            result = subprocess.run(
+                ['docker', 'ps', '-q'],
+                capture_output=True, text=True, timeout=10
+            )
+            
+            container_ids = [cid.strip() for cid in result.stdout.split('\n') if cid.strip()]
+            
+            if not container_ids:
+                logger.info("No running containers found")
+                return True
+            
+            logger.info(f"Found {len(container_ids)} running containers")
+            
+            # If order is specified, stop those first
+            if stop_order:
+                ordered_names = [n.strip() for n in stop_order.split(',') if n.strip()]
+                for name in ordered_names:
+                    try:
+                        logger.info(f"Stopping container: {name}")
+                        subprocess.run(
+                            ['docker', 'stop', '-t', str(timeout), name],
+                            timeout=timeout + 10
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not stop {name}: {e}")
+            
+            # Stop all remaining containers
+            if container_ids:
+                logger.info("Stopping remaining containers...")
+                subprocess.run(
+                    ['docker', 'stop', '-t', str(timeout)] + container_ids,
+                    timeout=timeout * len(container_ids) + 30
+                )
+            
+            logger.info("All containers stopped")
+            return True
+            
+        except subprocess.TimeoutExpired:
+            logger.error("Docker stop command timed out")
+            return False
+        except FileNotFoundError:
+            logger.warning("docker not found - Docker management not available")
+            return True
+        except Exception as e:
+            logger.error(f"Error stopping containers: {e}")
+            return False
+
 class FranklinWHMonitor:
     def __init__(self):
         self.config = self.load_config()
@@ -123,6 +385,11 @@ class FranklinWHMonitor:
         self.last_grid_status = True
         self.shutdown_initiated = False
         self.low_power_mode = False
+        self.last_history_save = 0
+        
+        # Initialize history database if enabled
+        enable_history = self.config.get('ENABLE_HISTORY', 'yes').lower()
+        self.db = HistoryDatabase(DB_FILE) if enable_history == 'yes' else None
         
         signal.signal(signal.SIGTERM, self.signal_handler)
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -244,14 +511,36 @@ class FranklinWHMonitor:
         logger.critical("Battery critical! Initiating shutdown...")
         self.send_notification(
             "FranklinWH: Critical Battery",
-            "Battery at critical level. Server will shutdown in " + 
-            self.config.get('SHUTDOWN_DELAY', '300') + " seconds."
+            "Battery at critical level. Preparing for shutdown..."
         )
         
         try:
+            # Shutdown VMs first if enabled
+            shutdown_vms = self.config.get('SHUTDOWN_VMS', 'yes').lower() == 'yes'
+            if shutdown_vms:
+                vm_timeout = int(self.config.get('VM_SHUTDOWN_TIMEOUT', '120'))
+                IntegrationManager.shutdown_vms(timeout=vm_timeout)
+            
+            # Stop Docker containers if enabled
+            shutdown_docker = self.config.get('SHUTDOWN_DOCKER', 'yes').lower() == 'yes'
+            if shutdown_docker:
+                docker_timeout = int(self.config.get('DOCKER_STOP_TIMEOUT', '30'))
+                docker_order = self.config.get('DOCKER_STOP_ORDER', '')
+                IntegrationManager.stop_docker_containers(
+                    stop_order=docker_order, 
+                    timeout=docker_timeout
+                )
+            
+            # Initiate system shutdown
             delay = int(self.config.get('SHUTDOWN_DELAY', '300'))
+            logger.info(f"Initiating system shutdown in {delay} seconds...")
             subprocess.Popen(['/sbin/shutdown', '-h', f'+{delay//60}'])
             self.shutdown_initiated = True
+            
+            self.send_notification(
+                "FranklinWH: Shutdown Initiated",
+                f"VMs and containers stopped. System shutdown in {delay//60} minutes."
+            )
         except Exception as e:
             logger.error(f"Error initiating shutdown: {e}")
             
@@ -259,11 +548,18 @@ class FranklinWHMonitor:
         check_interval = int(self.config.get('CHECK_INTERVAL', '60'))
         shutdown_threshold = int(self.config.get('SHUTDOWN_THRESHOLD', '20'))
         low_power_threshold = int(self.config.get('LOW_POWER_THRESHOLD', '50'))
+        history_interval = int(self.config.get('HISTORY_INTERVAL', '300'))
+        history_retention = int(self.config.get('HISTORY_RETENTION_DAYS', '90'))
         
         logger.info("Starting FranklinWH monitoring loop")
         logger.info(f"Check interval: {check_interval}s")
         logger.info(f"Low power threshold: {low_power_threshold}%")
         logger.info(f"Shutdown threshold: {shutdown_threshold}%")
+        if self.db:
+            logger.info(f"Historical logging enabled (interval: {history_interval}s, retention: {history_retention} days)")
+        
+        cleanup_counter = 0
+        stats_counter = 0
         
         while self.running:
             try:
@@ -271,6 +567,24 @@ class FranklinWHMonitor:
                 
                 if status:
                     self.save_status(status)
+                    
+                    # Save to historical database periodically
+                    current_time = time.time()
+                    if self.db and (current_time - self.last_history_save) >= history_interval:
+                        self.db.save_reading(status)
+                        self.last_history_save = current_time
+                    
+                    # Generate statistics periodically (every hour)
+                    stats_counter += 1
+                    if self.db and stats_counter >= 3600 / check_interval:
+                        self.generate_statistics()
+                        stats_counter = 0
+                    
+                    # Cleanup old data periodically (every 24 hours)
+                    cleanup_counter += 1
+                    if self.db and cleanup_counter >= 86400 / check_interval:
+                        self.db.cleanup_old_data(days=history_retention)
+                        cleanup_counter = 0
                     
                     battery_soc = status['battery_soc']
                     grid_status = status['grid_status']
@@ -309,6 +623,27 @@ class FranklinWHMonitor:
             time.sleep(check_interval)
             
         logger.info("Monitor loop terminated")
+    
+    def generate_statistics(self):
+        """Generate and save energy statistics"""
+        try:
+            if not self.db:
+                return
+            
+            stats = {
+                'daily': self.db.get_statistics('day'),
+                'weekly': self.db.get_statistics('week'),
+                'monthly': self.db.get_statistics('month'),
+                'generated_at': datetime.now().isoformat()
+            }
+            
+            Path(STATS_FILE).parent.mkdir(parents=True, exist_ok=True)
+            with open(STATS_FILE, 'w') as f:
+                json.dump(stats, f, indent=2)
+            
+            logger.info("Statistics generated successfully")
+        except Exception as e:
+            logger.error(f"Error generating statistics: {e}")
         
     def run(self):
         logger.info("FranklinWH Monitor starting...")
@@ -424,6 +759,118 @@ exit 0
 ]]></INLINE>
 </FILE>
 
+<FILE Name="/usr/local/emhttp/plugins/&name;/api.php">
+<INLINE>
+<![CDATA[<?php
+/* FranklinWH API Endpoint v1.1.0 */
+header('Content-Type: application/json');
+
+$action = $_GET['action'] ?? 'status';
+$db_file = '/boot/config/plugins/franklinwh/history.db';
+$stats_file = '/var/local/emhttp/franklinwh_stats.json';
+
+function get_history_data($hours = 24) {
+    global $db_file;
+    
+    if (!file_exists($db_file)) {
+        return ['error' => 'No historical data available'];
+    }
+    
+    try {
+        $db = new SQLite3($db_file);
+        $cutoff = date('Y-m-d H:i:s', strtotime("-$hours hours"));
+        
+        $query = "SELECT timestamp, battery_soc, battery_power, solar_power, 
+                         grid_power, home_consumption, grid_status 
+                  FROM power_history 
+                  WHERE timestamp > '$cutoff' 
+                  ORDER BY timestamp ASC";
+        
+        $result = $db->query($query);
+        $data = [];
+        
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            $data[] = $row;
+        }
+        
+        $db->close();
+        return $data;
+    } catch (Exception $e) {
+        return ['error' => $e->getMessage()];
+    }
+}
+
+function get_statistics() {
+    global $stats_file;
+    
+    if (!file_exists($stats_file)) {
+        return ['error' => 'No statistics available'];
+    }
+    
+    return json_decode(file_get_contents($stats_file), true);
+}
+
+function export_csv($hours = 24) {
+    $data = get_history_data($hours);
+    
+    if (isset($data['error'])) {
+        echo json_encode($data);
+        return;
+    }
+    
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="franklinwh_history_' . date('Y-m-d') . '.csv"');
+    
+    $output = fopen('php://output', 'w');
+    
+    // CSV headers
+    fputcsv($output, ['Timestamp', 'Battery SOC (%)', 'Battery Power (W)', 
+                      'Solar Power (W)', 'Grid Power (W)', 'Home Consumption (W)', 'Grid Status']);
+    
+    foreach ($data as $row) {
+        fputcsv($output, [
+            $row['timestamp'],
+            $row['battery_soc'],
+            $row['battery_power'],
+            $row['solar_power'],
+            $row['grid_power'],
+            $row['home_consumption'],
+            $row['grid_status']
+        ]);
+    }
+    
+    fclose($output);
+    exit;
+}
+
+switch ($action) {
+    case 'history':
+        $hours = intval($_GET['hours'] ?? 24);
+        echo json_encode(get_history_data($hours));
+        break;
+    
+    case 'statistics':
+        echo json_encode(get_statistics());
+        break;
+    
+    case 'export':
+        $hours = intval($_GET['hours'] ?? 24);
+        export_csv($hours);
+        break;
+    
+    case 'status':
+    default:
+        $status_file = '/var/local/emhttp/franklinwh_status.json';
+        if (file_exists($status_file)) {
+            echo file_get_contents($status_file);
+        } else {
+            echo json_encode(['error' => 'Status file not found']);
+        }
+        break;
+}
+?>]]></INLINE>
+</FILE>
+
 <FILE Name="/usr/local/emhttp/plugins/&name;/FranklinWHSettings.page">
 <INLINE>
 <![CDATA[Menu="OtherSettings"
@@ -495,6 +942,72 @@ Shutdown Delay (seconds):
 
 > Delay before shutdown executes (60-3600 seconds)
 
+&nbsp;
+:
+
+---
+
+### Historical Data Settings (v1.1.0+)
+
+Enable Historical Logging:
+: <select name="ENABLE_HISTORY">
+    <?=mk_option($cfg['ENABLE_HISTORY'],'yes','Yes')?>
+    <?=mk_option($cfg['ENABLE_HISTORY'],'no','No')?>
+  </select>
+
+> Save power data to database for graphs and statistics
+
+History Save Interval (seconds):
+: <input type="number" name="HISTORY_INTERVAL" min="60" max="3600" value="<?=$cfg['HISTORY_INTERVAL']?>">
+
+> How often to save data to history (60-3600 seconds, default: 300)
+
+History Retention (days):
+: <input type="number" name="HISTORY_RETENTION_DAYS" min="7" max="365" value="<?=$cfg['HISTORY_RETENTION_DAYS']?>">
+
+> How long to keep historical data (7-365 days, default: 90)
+
+&nbsp;
+:
+
+---
+
+### Integration Settings (v1.1.0+)
+
+Shutdown VMs Before Server:
+: <select name="SHUTDOWN_VMS">
+    <?=mk_option($cfg['SHUTDOWN_VMS'],'yes','Yes')?>
+    <?=mk_option($cfg['SHUTDOWN_VMS'],'no','No')?>
+  </select>
+
+> Gracefully shutdown all running VMs before server shutdown
+
+VM Shutdown Timeout (seconds):
+: <input type="number" name="VM_SHUTDOWN_TIMEOUT" min="30" max="600" value="<?=$cfg['VM_SHUTDOWN_TIMEOUT']?>">
+
+> Maximum time to wait for VMs to shutdown (30-600 seconds, default: 120)
+
+Stop Docker Containers:
+: <select name="SHUTDOWN_DOCKER">
+    <?=mk_option($cfg['SHUTDOWN_DOCKER'],'yes','Yes')?>
+    <?=mk_option($cfg['SHUTDOWN_DOCKER'],'no','No')?>
+  </select>
+
+> Stop all Docker containers before server shutdown
+
+Docker Stop Timeout (seconds):
+: <input type="number" name="DOCKER_STOP_TIMEOUT" min="10" max="300" value="<?=$cfg['DOCKER_STOP_TIMEOUT']?>">
+
+> Maximum time per container to wait for graceful stop (10-300 seconds, default: 30)
+
+Docker Stop Order (optional):
+: <input type="text" name="DOCKER_STOP_ORDER" value="<?=$cfg['DOCKER_STOP_ORDER']?>" placeholder="container1,container2,container3">
+
+> Comma-separated list of container names to stop first (others stopped after)
+
+&nbsp;
+:
+
 <input type="submit" value="Apply">
 <input type="button" value="Done" onclick="done()">
 </form>
@@ -524,6 +1037,21 @@ Shutdown Delay (seconds):
                 <div style="color:#999;font-size:0.9em;">Battery Power</div>
                 <div style="font-size:1.5em;font-weight:bold;color:#4CAF50;"><?=number_format($status['battery_power'])?> W</div>
             </div>
+            
+            <div style="background:#2a2a2a;padding:15px;border-radius:6px;border-left:4px solid #2196F3;">
+                <div style="color:#999;font-size:0.9em;">Solar Power</div>
+                <div style="font-size:1.5em;font-weight:bold;color:#2196F3;"><?=number_format($status['solar_power'])?> W</div>
+            </div>
+            
+            <div style="background:#2a2a2a;padding:15px;border-radius:6px;border-left:4px solid #FF9800;">
+                <div style="color:#999;font-size:0.9em;">Home Load</div>
+                <div style="font-size:1.5em;font-weight:bold;color:#FF9800;"><?=number_format($status['home_consumption'])?> W</div>
+            </div>
+            
+            <div style="background:#2a2a2a;padding:15px;border-radius:6px;border-left:4px solid #9C27B0;">
+                <div style="color:#999;font-size:0.9em;">Grid Power</div>
+                <div style="font-size:1.5em;font-weight:bold;color:#9C27B0;"><?=number_format($status['grid_power'])?> W</div>
+            </div>
         </div>
         
         <p style="color:#666;margin-top:20px;">Last updated: <?=date('Y-m-d H:i:s',strtotime($status['timestamp']))?></p>
@@ -531,6 +1059,61 @@ Shutdown Delay (seconds):
         <p style="color:#FF9800;">No status data available. Please enable the service and configure your credentials.</p>
     <?php endif; ?>
 </div>
+
+<?php
+$stats_file = '/var/local/emhttp/franklinwh_stats.json';
+if (file_exists($stats_file) && $cfg['ENABLE_HISTORY'] == 'yes'):
+    $stats = json_decode(file_get_contents($stats_file), true);
+?>
+<div style="background:#1c1c1c;border-radius:8px;padding:20px;margin:20px 0;">
+    <h2>Energy Statistics (v1.1.0)</h2>
+    
+    <div style="display:flex;gap:20px;margin-top:20px;flex-wrap:wrap;">
+        <?php if (isset($stats['daily']) && $stats['daily']): ?>
+        <div style="flex:1;min-width:250px;background:#2a2a2a;padding:15px;border-radius:6px;">
+            <h3 style="color:#4CAF50;margin-top:0;">Last 24 Hours</h3>
+            <p style="color:#ccc;margin:5px 0;"><strong>Avg Battery:</strong> <?=$stats['daily']['avg_battery_soc']?>%</p>
+            <p style="color:#ccc;margin:5px 0;"><strong>Peak Solar:</strong> <?=number_format($stats['daily']['peak_solar_power'])?> W</p>
+            <p style="color:#ccc;margin:5px 0;"><strong>Avg Consumption:</strong> <?=number_format($stats['daily']['avg_consumption'])?> W</p>
+        </div>
+        <?php endif; ?>
+        
+        <?php if (isset($stats['weekly']) && $stats['weekly']): ?>
+        <div style="flex:1;min-width:250px;background:#2a2a2a;padding:15px;border-radius:6px;">
+            <h3 style="color:#2196F3;margin-top:0;">Last 7 Days</h3>
+            <p style="color:#ccc;margin:5px 0;"><strong>Avg Battery:</strong> <?=$stats['weekly']['avg_battery_soc']?>%</p>
+            <p style="color:#ccc;margin:5px 0;"><strong>Peak Solar:</strong> <?=number_format($stats['weekly']['peak_solar_power'])?> W</p>
+            <p style="color:#ccc;margin:5px 0;"><strong>Avg Consumption:</strong> <?=number_format($stats['weekly']['avg_consumption'])?> W</p>
+        </div>
+        <?php endif; ?>
+        
+        <?php if (isset($stats['monthly']) && $stats['monthly']): ?>
+        <div style="flex:1;min-width:250px;background:#2a2a2a;padding:15px;border-radius:6px;">
+            <h3 style="color:#FF9800;margin-top:0;">Last 30 Days</h3>
+            <p style="color:#ccc;margin:5px 0;"><strong>Avg Battery:</strong> <?=$stats['monthly']['avg_battery_soc']?>%</p>
+            <p style="color:#ccc;margin:5px 0;"><strong>Peak Solar:</strong> <?=number_format($stats['monthly']['peak_solar_power'])?> W</p>
+            <p style="color:#ccc;margin:5px 0;"><strong>Avg Consumption:</strong> <?=number_format($stats['monthly']['avg_consumption'])?> W</p>
+        </div>
+        <?php endif; ?>
+    </div>
+    
+    <div style="margin-top:20px;">
+        <a href="/plugins/franklinwh/api.php?action=export&hours=24" style="display:inline-block;padding:10px 20px;background:#4CAF50;color:white;text-decoration:none;border-radius:4px;margin-right:10px;">
+            Export CSV (24h)
+        </a>
+        <a href="/plugins/franklinwh/api.php?action=export&hours=168" style="display:inline-block;padding:10px 20px;background:#2196F3;color:white;text-decoration:none;border-radius:4px;margin-right:10px;">
+            Export CSV (7d)
+        </a>
+        <a href="/plugins/franklinwh/api.php?action=export&hours=720" style="display:inline-block;padding:10px 20px;background:#FF9800;color:white;text-decoration:none;border-radius:4px;">
+            Export CSV (30d)
+        </a>
+    </div>
+    
+    <p style="color:#666;margin-top:20px;font-size:0.9em;">
+        <em>Note: Interactive graphs will be added in a future update. Use CSV export to analyze data in Excel or other tools.</em>
+    </p>
+</div>
+<?php endif; ?>
 
 <script>
 setInterval(function(){location.reload();},60000);
