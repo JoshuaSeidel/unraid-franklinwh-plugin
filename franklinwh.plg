@@ -3,7 +3,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "franklinwh">
 <!ENTITY author    "Joshua Seidel">
-<!ENTITY version   "1.1.0">
+<!ENTITY version   "1.1.1">
 <!ENTITY launch    "Settings/FranklinWHSettings">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master">
 <!ENTITY pluginURL "&gitURL;/franklinwh.plg">
@@ -13,6 +13,12 @@
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" icon="&icon;" min="6.9.0" support="https://github.com/JoshuaSeidel/unraid-franklinwh-plugin/issues">
 
 <CHANGES>
+###1.1.1
+- IMPROVED: Interactive Docker container selector with drag-and-drop reordering
+- IMPROVED: Visual indication of selected containers with colored borders
+- IMPROVED: Container list shows image names for easier identification
+- IMPROVED: Section automatically hides when Docker integration is disabled
+
 ###1.1.0
 - NEW: Historical data logging with SQLite database
 - NEW: Interactive graphs for battery SOC, power flow, and solar production
@@ -988,7 +994,7 @@ VM Shutdown Timeout (seconds):
 > Maximum time to wait for VMs to shutdown (30-600 seconds, default: 120)
 
 Stop Docker Containers:
-: <select name="SHUTDOWN_DOCKER">
+: <select name="SHUTDOWN_DOCKER" onchange="toggleDockerSettings(this.value)">
     <?=mk_option($cfg['SHUTDOWN_DOCKER'],'yes','Yes')?>
     <?=mk_option($cfg['SHUTDOWN_DOCKER'],'no','No')?>
   </select>
@@ -1000,10 +1006,156 @@ Docker Stop Timeout (seconds):
 
 > Maximum time per container to wait for graceful stop (10-300 seconds, default: 30)
 
-Docker Stop Order (optional):
-: <input type="text" name="DOCKER_STOP_ORDER" value="<?=$cfg['DOCKER_STOP_ORDER']?>" placeholder="container1,container2,container3">
+<div id="docker_container_section" style="display:<?=$cfg['SHUTDOWN_DOCKER']=='yes'?'block':'none'?>;">
 
-> Comma-separated list of container names to stop first (others stopped after)
+Containers to Stop:
+: <div style="background:#2a2a2a;padding:15px;border-radius:6px;max-height:400px;overflow-y:auto;">
+    <?php
+    // Get list of running Docker containers
+    $containers = [];
+    $docker_cmd = 'docker ps --format "{{.Names}}|{{.Image}}|{{.Status}}" 2>/dev/null';
+    exec($docker_cmd, $output, $return_var);
+    
+    if ($return_var === 0 && !empty($output)) {
+        foreach ($output as $line) {
+            $parts = explode('|', $line);
+            if (count($parts) >= 3) {
+                $containers[] = [
+                    'name' => $parts[0],
+                    'image' => $parts[1],
+                    'status' => $parts[2]
+                ];
+            }
+        }
+    }
+    
+    // Parse current stop order
+    $stop_order = array_filter(array_map('trim', explode(',', $cfg['DOCKER_STOP_ORDER'] ?? '')));
+    
+    if (empty($containers)) {
+        echo '<p style="color:#FF9800;margin:0;">No running Docker containers found.</p>';
+        echo '<p style="color:#999;font-size:0.9em;margin:10px 0 0 0;">Containers will be detected when service runs during grid outage.</p>';
+    } else {
+        echo '<p style="color:#999;font-size:0.9em;margin:0 0 10px 0;">Select containers to stop in priority order (drag to reorder):</p>';
+        echo '<div id="container_list" style="display:grid;gap:8px;">';
+        
+        // First show containers in stop_order
+        foreach ($stop_order as $priority_name) {
+            foreach ($containers as $idx => $container) {
+                if ($container['name'] === $priority_name) {
+                    $checked = 'checked';
+                    echo '<div class="container-item" draggable="true" data-name="' . htmlspecialchars($container['name']) . '" style="background:#1c1c1c;padding:10px;border-radius:4px;border-left:4px solid #4CAF50;cursor:move;display:flex;align-items:center;gap:10px;">';
+                    echo '<input type="checkbox" class="container-checkbox" name="docker_containers[]" value="' . htmlspecialchars($container['name']) . '" ' . $checked . ' style="cursor:pointer;">';
+                    echo '<div style="flex:1;">';
+                    echo '<div style="color:#4CAF50;font-weight:bold;">' . htmlspecialchars($container['name']) . '</div>';
+                    echo '<div style="color:#999;font-size:0.85em;">' . htmlspecialchars($container['image']) . '</div>';
+                    echo '</div>';
+                    echo '<span style="color:#666;font-size:0.9em;">☰</span>';
+                    echo '</div>';
+                    unset($containers[$idx]);
+                    break;
+                }
+            }
+        }
+        
+        // Then show remaining containers
+        foreach ($containers as $container) {
+            $checked = '';
+            echo '<div class="container-item" draggable="true" data-name="' . htmlspecialchars($container['name']) . '" style="background:#1c1c1c;padding:10px;border-radius:4px;border-left:4px solid #666;cursor:move;display:flex;align-items:center;gap:10px;">';
+            echo '<input type="checkbox" class="container-checkbox" name="docker_containers[]" value="' . htmlspecialchars($container['name']) . '" ' . $checked . ' style="cursor:pointer;">';
+            echo '<div style="flex:1;">';
+            echo '<div style="color:#ccc;font-weight:bold;">' . htmlspecialchars($container['name']) . '</div>';
+            echo '<div style="color:#999;font-size:0.85em;">' . htmlspecialchars($container['image']) . '</div>';
+            echo '</div>';
+            echo '<span style="color:#666;font-size:0.9em;">☰</span>';
+            echo '</div>';
+        }
+        
+        echo '</div>';
+    }
+    ?>
+    <input type="hidden" name="DOCKER_STOP_ORDER" id="docker_stop_order_hidden" value="<?=htmlspecialchars($cfg['DOCKER_STOP_ORDER'])?>">
+  </div>
+
+> Checked containers will be stopped before shutdown. **Drag to reorder** - containers at the top are stopped first.
+
+</div>
+
+<script>
+function toggleDockerSettings(value) {
+    document.getElementById('docker_container_section').style.display = value === 'yes' ? 'block' : 'none';
+}
+
+// Drag and drop functionality for container ordering
+let draggedElement = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    const containerList = document.getElementById('container_list');
+    if (!containerList) return;
+    
+    const items = containerList.querySelectorAll('.container-item');
+    
+    items.forEach(item => {
+        item.addEventListener('dragstart', function(e) {
+            draggedElement = this;
+            this.style.opacity = '0.5';
+        });
+        
+        item.addEventListener('dragend', function(e) {
+            this.style.opacity = '1';
+            updateStopOrder();
+        });
+        
+        item.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            if (draggedElement !== this) {
+                const rect = this.getBoundingClientRect();
+                const midpoint = rect.top + rect.height / 2;
+                if (e.clientY < midpoint) {
+                    this.parentNode.insertBefore(draggedElement, this);
+                } else {
+                    this.parentNode.insertBefore(draggedElement, this.nextSibling);
+                }
+            }
+        });
+    });
+    
+    // Update order when checkboxes change
+    containerList.addEventListener('change', function(e) {
+        if (e.target.classList.contains('container-checkbox')) {
+            updateStopOrder();
+            updateContainerStyle(e.target);
+        }
+    });
+    
+    function updateContainerStyle(checkbox) {
+        const item = checkbox.closest('.container-item');
+        const nameDiv = item.querySelector('div > div:first-child');
+        if (checkbox.checked) {
+            item.style.borderLeftColor = '#4CAF50';
+            nameDiv.style.color = '#4CAF50';
+        } else {
+            item.style.borderLeftColor = '#666';
+            nameDiv.style.color = '#ccc';
+        }
+    }
+    
+    function updateStopOrder() {
+        const checkedContainers = [];
+        const items = document.querySelectorAll('.container-item');
+        items.forEach(item => {
+            const checkbox = item.querySelector('.container-checkbox');
+            if (checkbox && checkbox.checked) {
+                checkedContainers.push(item.dataset.name);
+            }
+        });
+        document.getElementById('docker_stop_order_hidden').value = checkedContainers.join(',');
+    }
+    
+    // Initial update
+    updateStopOrder();
+});
+</script>
 
 &nbsp;
 :
