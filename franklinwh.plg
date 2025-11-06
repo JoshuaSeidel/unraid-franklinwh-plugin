@@ -3,7 +3,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "franklinwh">
 <!ENTITY author    "Joshua Seidel">
-<!ENTITY version   "1.1.2">
+<!ENTITY version   "1.1.3">
 <!ENTITY launch    "Settings/FranklinWHSettings">
 <!ENTITY gitURL    "https://raw.githubusercontent.com/JoshuaSeidel/unraid-franklinwh-plugin/master">
 <!ENTITY pluginURL "&gitURL;/franklinwh.plg">
@@ -13,6 +13,12 @@
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" icon="&icon;" min="6.9.0" support="https://github.com/JoshuaSeidel/unraid-franklinwh-plugin/issues">
 
 <CHANGES>
+###1.1.3
+- FIXED: Installation script now exits cleanly without hanging
+- FIXED: Service start runs in background to prevent installation blocking
+- IMPROVED: Added explicit exit 0 to installation script
+- IMPROVED: 1 second delay after service start for clean initialization
+
 ###1.1.2
 - FIXED: Power values now correctly display as kW when >= 1000W
 - FIXED: Status display shows proper units (W for under 1kW, kW for 1kW and above)
@@ -1307,13 +1313,15 @@ chmod +x /etc/rc.d/rc.franklinwh
 chmod 644 /usr/local/emhttp/plugins/franklinwh/*.page
 chmod 644 /usr/local/emhttp/plugins/franklinwh/*.php
 
-# Start service if enabled
+# Start service if enabled (in background to prevent hanging)
 source /boot/config/plugins/franklinwh/franklinwh.cfg
 if [ "$SERVICE" = "enable" ]; then
-    /etc/rc.d/rc.franklinwh restart
+    /etc/rc.d/rc.franklinwh restart &
+    sleep 1
 fi
 
 echo "FranklinWH plugin installed successfully"
+exit 0
 ]]>
 </INLINE>
 </FILE>
